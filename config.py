@@ -81,3 +81,7 @@ LATERAL_SETTINGS = {"DOWN": 30, "TARGET_UP": SAFE_LATERAL_TARGET, "BUFFER": 15, 
 # --- 11. SHOULDER PRESS ---
 PRESS_TARGET = extract_golden_target('golden_dataset/Shoulder press.csv', [12, 14, 16], "extension")
 PRESS_SETTINGS = {"START": 90, "TARGET_EXTENSION": PRESS_TARGET, "BUFFER": 15}
+
+# --- 12. BENCH PRESS ---
+BENCH_TARGET = extract_golden_target('golden_dataset/Benchpress.csv',[12, 14, 16],"flexion")
+BENCH_SETTINGS = {"LOCKOUT": 165,"TARGET_DEPTH": BENCH_TARGET,"BUFFER": 15,"MAX_ASYMMETRY": 40,"MAX_FLARE": 85}

@@ -1,2 +1,18 @@
+# macOS
 .DS_Store
+
+# Python
 __pycache__/
+*.pyc
+
+# Virtual Environment
+venv/
+
+# Voice files
+voice.mp3
+
+# VS Code
+.vscode/
+
+# Optional (if you don't want videos in Git)
+*.mp4
