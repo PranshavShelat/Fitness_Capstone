@@ -11,3 +11,10 @@ venv/
 .pytest_cache/
 .vscode/
 voice_files/
+
+# Flutter / Dart
+mobile_app/.dart_tool/
+mobile_app/build/
+mobile_app/.pub-cache/
+mobile_app/.pub/
+mobile_app/app.so
