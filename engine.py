@@ -4,7 +4,7 @@ from utils import calculate_angle
 from config import (
     SQUAT_SETTINGS, PLANK_SETTINGS, DIP_SETTINGS, 
     PUSHUP_SETTINGS, PULLUP_SETTINGS, TWIST_SETTINGS,
-    BICEP_SETTINGS, HAMMER_SETTINGS, LATERAL_SETTINGS, PRESS_SETTINGS
+    BICEP_SETTINGS, HAMMER_SETTINGS, LATERAL_SETTINGS, PRESS_SETTINGS,BENCH_SETTINGS
 )
 
 mp_pose = mp.solutions.pose
@@ -330,4 +330,95 @@ def analyze_shoulder_press(landmarks, stage):
             feedback, color = "PRESS HIGHER (LOCKOUT)", (0, 255, 255)
 
     tel = [f"Avg Elbow: {int(avg_angle)} (Must drop below: {int(target_start)})", f"L: {int(l_angle)} | R: {int(r_angle)}"]
+    return feedback, color, stage, tel
+
+# --- 11. BENCH PRESS ---
+def analyze_bench_press(landmarks, stage):
+
+    # Right Side
+    r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+             landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+
+    r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                  landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+
+    r_elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,
+               landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+
+    r_wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
+               landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+
+    # Left Side
+    l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+             landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+
+    l_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                  landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+
+    l_elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
+               landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+
+    l_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
+               landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+
+    # Elbow Angles
+    r_angle = calculate_angle(r_shoulder, r_elbow, r_wrist)
+    l_angle = calculate_angle(l_shoulder, l_elbow, l_wrist)
+
+    avg_angle = (r_angle + l_angle) / 2
+
+    # Flare
+    r_flare = calculate_angle(r_hip, r_shoulder, r_elbow)
+    l_flare = calculate_angle(l_hip, l_shoulder, l_elbow)
+
+    avg_flare = (r_flare + l_flare) / 2
+
+    target = BENCH_SETTINGS["TARGET_DEPTH"]
+
+    if avg_angle > BENCH_SETTINGS["LOCKOUT"]:
+        stage = "UP"
+
+    elif avg_angle < target + BENCH_SETTINGS["BUFFER"] and stage == "UP":
+        stage = "DOWN"
+
+    feedback = "READY"
+    color = (255,255,255)
+
+    if abs(r_angle-l_angle) > BENCH_SETTINGS["MAX_ASYMMETRY"]:
+        feedback = "PRESS EVENLY"
+        color = (0,0,255)
+
+    elif avg_flare > BENCH_SETTINGS["MAX_FLARE"]:
+        feedback = "TUCK ELBOWS"
+        color = (0,0,255)
+
+    elif avg_angle > BENCH_SETTINGS["LOCKOUT"]:
+        feedback = "GOOD LOCKOUT"
+        color = (0,255,0)
+
+    elif avg_angle > target + BENCH_SETTINGS["BUFFER"]:
+        if stage == "DOWN":
+            feedback = "LOWER BAR"
+            color = (0,165,255)
+        else:
+            feedback = "PRESS UP"
+            color = (0,255,255)
+
+    elif avg_angle < target-10:
+        feedback = "TOO LOW"
+        color = (0,0,255)
+
+    elif target - 15 <= avg_angle <= target + 20:
+        feedback = "PERFECT REP"
+        color = (0,255,0)
+
+    tel = [
+        f"Avg Elbow: {int(avg_angle)}",
+        f"Flare: {int(avg_flare)}"
+    ]
+    print(
+    f"Stage:{stage}  "
+    f"Angle:{int(avg_angle)}  "
+    f"Flare:{int(avg_flare)}"
+)
     return feedback, color, stage, tel
