@@ -23,7 +23,8 @@ def calculate_angle(a, b, c):
 last_time = 0
 
 def _play_audio_in_background(text):
-    filename = f"voice_{int(time.time() * 1000)}.mp3" 
+    os.makedirs("voice_files", exist_ok=True)
+    filename = f"voice_files/voice_{int(time.time() * 1000)}.mp3" 
     try:
         tts = gTTS(text=text, lang='en')
         tts.save(filename)
