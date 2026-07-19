@@ -40,7 +40,10 @@ if not CURRENT_MODE:
 # --- SYSTEM INITIALIZATION ---
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
-cap = cv2.VideoCapture("bench press_28.mp4")
+if CURRENT_MODE == "BENCH":
+    cap = cv2.VideoCapture("bench press_28.mp4")
+else:
+    cap = cv2.VideoCapture(0)
 
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     stage = "UP"
