@@ -6,7 +6,7 @@ function formatDuration(totalSeconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises, repBasedModes, onDismiss, onBackToDashboard }) {
+function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises, repBasedModes, onDismiss, onBackToDashboard, onGenerateReport, reportStatus, reportError }) {
   const repExercises = exercises.filter(ex => repBasedModes.has(ex.id));
   const totalReps = Object.values(repCounts).reduce((sum, n) => sum + n, 0);
 
@@ -35,6 +35,17 @@ function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises,
           <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Reps</span>
           <span className="text-xl font-bold text-cyan-300">{totalReps}</span>
         </div>
+
+        <button
+          onClick={onGenerateReport}
+          disabled={reportStatus === 'generating'}
+          className="w-full mb-2 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          {reportStatus === 'generating' ? 'Generating Report...' : 'Generate Injury Report'}
+        </button>
+        {reportStatus === 'error' && (
+          <p className="text-red-400 text-xs text-center mb-4">{reportError}</p>
+        )}
 
         <div className="flex flex-col gap-2">
           <button

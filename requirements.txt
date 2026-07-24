@@ -3,3 +3,7 @@ mediapipe==0.10.14
 numpy
 gTTS
 playsound==1.2.2
+websockets
+google-genai
+fpdf2
+python-dotenv

@@ -114,6 +114,83 @@ function WeatherCard() {
   );
 }
 
+async function downloadReport(filename) {
+  const res = await fetch(`http://localhost:8000/reports/${encodeURIComponent(filename)}`);
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function PastReportsCard() {
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
+  const [reports, setReports] = useState([]);
+
+  const loadReports = () => {
+    setStatus('loading');
+    fetch('http://localhost:8000/reports')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to load reports');
+        return res.json();
+      })
+      .then(data => {
+        setReports(data);
+        setStatus('ready');
+      })
+      .catch(() => setStatus('error'));
+  };
+
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+  return (
+    <GlassCard className="md:col-span-2 lg:col-span-3">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Past Injury Reports</h3>
+        <button
+          onClick={loadReports}
+          aria-label="Refresh reports"
+          className="text-gray-500 hover:text-gray-300 text-xs"
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {status === 'loading' && <p className="text-gray-500 text-sm italic">Loading...</p>}
+      {status === 'error' && (
+        <p className="text-gray-500 text-sm">Couldn't reach the AI Engine to load reports.</p>
+      )}
+      {status === 'ready' && reports.length === 0 && (
+        <p className="text-gray-500 text-sm">No reports generated yet - they'll show up here after a workout.</p>
+      )}
+      {status === 'ready' && reports.length > 0 && (
+        <div className="space-y-2">
+          {reports.map(report => (
+            <div key={report.filename} className="flex items-center justify-between text-sm bg-gray-800/40 rounded-lg px-4 py-2">
+              <span className="text-gray-300">
+                {new Date(report.created_at * 1000).toLocaleString()}
+              </span>
+              <button
+                onClick={() => downloadReport(report.filename)}
+                className="text-cyan-400 hover:text-cyan-300 font-semibold"
+              >
+                Download
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 function Dashboard({ onStartWorkout }) {
   return (
     <div className="min-h-screen bg-gray-950 text-white font-sans p-6 md:p-10">
@@ -168,6 +245,8 @@ function Dashboard({ onStartWorkout }) {
               className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-gray-500 placeholder-gray-600 cursor-not-allowed"
             />
           </GlassCard>
+
+          <PastReportsCard />
         </div>
       </div>
     </div>

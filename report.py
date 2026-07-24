@@ -1,0 +1,179 @@
+import json
+import os
+import re
+from datetime import datetime
+
+from fpdf import FPDF
+from google import genai
+
+from db import get_faults, delete_faults
+from injury_knowledge import MISHAP_EXPLANATIONS
+from pose_diagram import render_fault_diagram
+
+GEMINI_MODEL = "gemini-2.5-flash"
+SECTION_MARKER = "===FAULT_{}==="
+REPORTS_DIR = "reports"
+
+
+def summarize_faults(rows):
+    """rows: list of (mode, message, landmarks_json, occurred_at) tuples from db.get_faults.
+    Groups by (mode, message) so the same message on two different exercises
+    (e.g. "TUCK ELBOWS IN" on both Bicep and Hammer curls) is tracked separately.
+    Keeps one representative landmark snapshot (the first occurrence) per group -
+    used only to draw that fault's diagram, and an internal `count` used only to
+    pick sort order/representative row - never surfaced in the prompt or PDF text,
+    since per-frame occurrence counts are noisy and don't mean what they look like.
+    """
+    grouped = {}
+    for mode, message, landmarks_json, _occurred_at in rows:
+        key = (mode, message)
+        if key not in grouped:
+            grouped[key] = {"count": 0, "landmarks": json.loads(landmarks_json)}
+        grouped[key]["count"] += 1
+
+    summary = []
+    for (mode, message), data in grouped.items():
+        info = MISHAP_EXPLANATIONS.get(message, {})
+        summary.append({
+            "mode": mode,
+            "message": message,
+            "count": data["count"],
+            "landmarks": data["landmarks"],
+            "label": info.get("label", message.title()),
+            "explanation": info.get("explanation", ""),
+            "highlight": info.get("highlight", []),
+        })
+    summary.sort(key=lambda fault: fault["count"], reverse=True)
+    return summary
+
+
+def build_gemini_prompt(fault_summary):
+    lines = [
+        "You are a knowledgeable, encouraging fitness coach writing a short injury-risk "
+        "report for a user's workout. You are given a list of form faults detected during "
+        "their session, along with the known biomechanical risk each fault carries. Write "
+        "one clear, plain-English paragraph per fault explaining what happened and what it "
+        "could lead to if uncorrected. Do not state or imply how many times it happened - "
+        "just describe it generally (e.g. 'this happened during your set'), since exact "
+        "per-frame counts aren't meaningful to the user. Be direct and factual, not "
+        "alarmist. Do not invent risks beyond what's described below. Address the user "
+        "directly as 'you'. Plain text only, no markdown formatting.",
+        "",
+        "Faults detected this session:",
+    ]
+    for i, fault in enumerate(fault_summary):
+        lines.append(f'{i}. {fault["mode"]} - "{fault["label"]}": {fault["explanation"]}')
+    lines.append("")
+    lines.append(
+        "Respond with exactly one paragraph per fault listed above, in the same order. "
+        "Before each paragraph, put a line by itself with exactly this text (i is the "
+        "fault's number above): " + SECTION_MARKER.format("i")
+    )
+    return "\n".join(lines)
+
+
+def call_gemini(prompt):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set - add it to a .env file before generating a report.")
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+    return response.text
+
+
+def split_gemini_sections(response_text, n):
+    """Parses the ===FAULT_i=== delimited response back into a list of n paragraphs,
+    in order. Falls back to the curated explanation for any section that's missing
+    or if the model didn't follow the delimiter format (never let a formatting slip
+    break the report).
+    """
+    sections = [None] * n
+    pattern = re.compile(r"===FAULT_(\d+)===\s*(.*?)(?=(?:===FAULT_\d+===)|\Z)", re.DOTALL)
+    for match in pattern.finditer(response_text or ""):
+        idx = int(match.group(1))
+        if 0 <= idx < n:
+            sections[idx] = match.group(2).strip()
+    return sections
+
+
+def _line(pdf, h, text):
+    # multi_cell(w=0, ...) leaves the x-cursor at the right margin instead of
+    # resetting it to the left margin, so the *next* multi_cell call sees ~zero
+    # horizontal space left and raises FPDFException. Reset x before every call.
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, h, text)
+
+
+def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, fault_paragraphs):
+    pdf = FPDF()
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 18)
+    _line(pdf, 12, "Workout Injury Risk Report")
+
+    pdf.set_font("Helvetica", "", 10)
+    _line(pdf, 8, datetime.now().strftime("%Y-%m-%d %H:%M"))
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 13)
+    _line(pdf, 10, "Workout Summary")
+    pdf.set_font("Helvetica", "", 11)
+    minutes, seconds = divmod(int(duration_seconds), 60)
+    _line(pdf, 7, f"Duration: {minutes:02d}:{seconds:02d}")
+    rep_line = ", ".join(f"{mode.title()}: {count}" for mode, count in (rep_counts or {}).items() if count)
+    if rep_line:
+        _line(pdf, 7, f"Reps: {rep_line}")
+    if plank_hold_seconds:
+        _line(pdf, 7, f"Plank hold: {round(plank_hold_seconds)}s")
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 13)
+    _line(pdf, 10, "Mishaps & Injury Risk")
+
+    if not fault_summary:
+        pdf.set_font("Helvetica", "", 11)
+        _line(pdf, 7, "No risky form issues were detected during this workout. Great job!")
+    else:
+        for fault, paragraph in zip(fault_summary, fault_paragraphs):
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "B", 12)
+            _line(pdf, 8, fault["label"])
+
+            if fault["highlight"]:
+                diagram = render_fault_diagram(fault["landmarks"], fault["highlight"], fault["label"])
+                pdf.set_x(pdf.l_margin)
+                pdf.image(diagram, w=60)
+
+            pdf.set_font("Helvetica", "", 11)
+            _line(pdf, 7, paragraph or fault["explanation"])
+
+    return bytes(pdf.output())
+
+
+def generate_report_pdf(session_id, duration_seconds, rep_counts, plank_hold_seconds):
+    """Full flow: read this session's logged faults, summarize them, optionally ask
+    Gemini to write the explanatory prose, render the PDF, then wipe the session's
+    rows from the mishap log (per design: it's a scratch log, the PDF is the record).
+    Returns (filename, pdf_bytes).
+    """
+    rows = get_faults(session_id)
+    fault_summary = summarize_faults(rows)
+
+    if fault_summary:
+        prompt = build_gemini_prompt(fault_summary)
+        response_text = call_gemini(prompt)
+        fault_paragraphs = split_gemini_sections(response_text, len(fault_summary))
+    else:
+        fault_paragraphs = []
+
+    pdf_bytes = render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, fault_paragraphs)
+
+    delete_faults(session_id)
+
+    filename = f"workout_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    with open(os.path.join(REPORTS_DIR, filename), "wb") as f:
+        f.write(pdf_bytes)
+
+    return filename, pdf_bytes

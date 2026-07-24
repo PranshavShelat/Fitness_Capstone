@@ -15,6 +15,21 @@ function formatDuration(totalSeconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function downloadPdfFromBase64(filename, base64) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function WorkoutView({ onExit }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -33,12 +48,17 @@ function WorkoutView({ onExit }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [repCounts, setRepCounts] = useState({});
   const [plankHoldSeconds, setPlankHoldSeconds] = useState(0);
+  const [reportStatus, setReportStatus] = useState('idle'); // 'idle' | 'generating' | 'error'
+  const [reportError, setReportError] = useState('');
 
   const sessionStartRef = useRef(null);
   const sessionActiveRef = useRef(false);
   const modeRef = useRef(mode);
   const voiceEnabledRef = useRef(isVoiceEnabled);
   const preferredVoiceRef = useRef(null);
+  // Durable per-workout id (survives a WS reconnect / page reload) - the backend's
+  // mishap log is keyed by this, not by any one TCP connection.
+  const sessionIdRef = useRef(typeof window !== 'undefined' ? localStorage.getItem('fitness_session_id') : null);
 
   // Exercise definitions
   const exercises = [
@@ -92,10 +112,16 @@ function WorkoutView({ onExit }) {
   };
 
   const startWorkout = () => {
+    const newSessionId = crypto.randomUUID();
+    sessionIdRef.current = newSessionId;
+    localStorage.setItem('fitness_session_id', newSessionId);
+
     setRepCounts({});
     setPlankHoldSeconds(0);
     setElapsedSeconds(0);
     setShowSummary(false);
+    setReportStatus('idle');
+    setReportError('');
     setSessionActive(true);
   };
 
@@ -106,6 +132,23 @@ function WorkoutView({ onExit }) {
 
   const dismissSummary = () => {
     setShowSummary(false);
+  };
+
+  const generateReport = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setReportStatus('error');
+      setReportError('Not connected to the AI Engine');
+      return;
+    }
+    setReportStatus('generating');
+    setReportError('');
+    wsRef.current.send(JSON.stringify({
+      action: 'generate_report',
+      session_id: sessionIdRef.current,
+      duration_seconds: elapsedSeconds,
+      rep_counts: repCounts,
+      plank_hold_seconds: plankHoldSeconds,
+    }));
   };
 
   // Workout duration timer
@@ -136,6 +179,18 @@ function WorkoutView({ onExit }) {
 
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
+        if (data.action === 'report_ready') {
+          downloadPdfFromBase64(data.filename, data.pdf_base64);
+          setReportStatus('idle');
+          return;
+        }
+        if (data.action === 'report_error') {
+          setReportStatus('error');
+          setReportError(data.message || 'Failed to generate report');
+          return;
+        }
+
         if (data.error) return;
         // Drop stale responses for an exercise the user has already switched away from
         if (data.mode !== undefined && data.mode !== modeRef.current) return;
@@ -219,7 +274,8 @@ function WorkoutView({ onExit }) {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({
             mode: modeRef.current,
-            landmarks: results.poseLandmarks
+            landmarks: results.poseLandmarks,
+            session_id: sessionIdRef.current
           }));
         }
       }
@@ -269,6 +325,9 @@ function WorkoutView({ onExit }) {
           repBasedModes={REP_BASED_MODES}
           onDismiss={dismissSummary}
           onBackToDashboard={onExit}
+          onGenerateReport={generateReport}
+          reportStatus={reportStatus}
+          reportError={reportError}
         />
       )}
 
