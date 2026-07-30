@@ -190,7 +190,6 @@ function WorkoutView({ onExit }) {
           setReportError(data.message || 'Failed to generate report');
           return;
         }
-
         if (data.error) return;
         // Drop stale responses for an exercise the user has already switched away from
         if (data.mode !== undefined && data.mode !== modeRef.current) return;
@@ -301,14 +300,14 @@ function WorkoutView({ onExit }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans flex flex-col md:flex-row">
+    <div className="min-h-screen bg-black text-white font-sans flex flex-col md:flex-row">
 
       {/* Reconnect / connecting overlay */}
       {wsStatus !== 'open' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 backdrop-blur-sm">
-          <div className="bg-gray-900/80 border border-gray-700/50 rounded-2xl px-8 py-6 flex flex-col items-center gap-3">
-            <div className="h-8 w-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-            <p className="text-cyan-100 font-semibold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+          <div className="bg-white/[0.04] border border-white/10 rounded-[28px] px-8 py-6 flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-white border-t-transparent animate-spin" />
+            <p className="text-neutral-300 font-medium">
               {wsStatus === 'reconnecting' ? 'Reconnecting to AI Engine...' : 'Connecting to AI Engine...'}
             </p>
           </div>
@@ -332,32 +331,32 @@ function WorkoutView({ onExit }) {
       )}
 
       {/* Mobile top bar */}
-      <div className="flex md:hidden items-center justify-between px-4 py-2 bg-gray-900/90 backdrop-blur border-b border-gray-800 fixed top-0 inset-x-0 z-30">
+      <div className="flex md:hidden items-center justify-between px-4 py-2 bg-black/90 backdrop-blur border-b border-white/10 fixed top-0 inset-x-0 z-30">
         <div className="flex items-center gap-2">
           {!sessionActive && (
             <button
               onClick={onExit}
               aria-label="Back to dashboard"
-              className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-sm"
+              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm"
             >
               ←
             </button>
           )}
-          <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">
+          <span className="text-sm font-semibold tracking-tight">
             AI Fitness
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={sessionActive ? endWorkout : startWorkout}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-white text-black hover:bg-neutral-200'}`}
           >
             {sessionActive ? formatDuration(elapsedSeconds) : 'Start'}
           </button>
           <button
             onClick={() => setIsVoiceEnabled(v => !v)}
             aria-label="Toggle voice coaching"
-            className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-sm"
+            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm"
           >
             {isVoiceEnabled ? '🔊' : '🔇'}
           </button>
@@ -365,43 +364,43 @@ function WorkoutView({ onExit }) {
       </div>
 
       {/* Sidebar: Dashboard (desktop only) */}
-      <div className="hidden md:flex md:flex-col md:w-80 bg-gray-900 border-r border-gray-800 shadow-2xl z-10">
-        <div className="p-6 border-b border-gray-800">
+      <div className="hidden md:flex md:flex-col md:w-80 bg-black border-r border-white/10 z-10">
+        <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
             {!sessionActive && (
               <button
                 onClick={onExit}
                 aria-label="Back to dashboard"
-                className="w-8 h-8 shrink-0 rounded-full bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-sm transition-colors"
+                className="w-8 h-8 shrink-0 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-sm transition-colors"
               >
                 ←
               </button>
             )}
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">
+            <h1 className="text-2xl font-semibold tracking-tight">
               AI Fitness Engine
             </h1>
           </div>
-          <p className="text-gray-400 text-sm mt-2">Zero-Latency WebTracker</p>
+          <p className="text-neutral-500 text-sm mt-2">Zero-Latency WebTracker</p>
 
           <button
             onClick={sessionActive ? endWorkout : startWorkout}
-            className={`mt-4 w-full py-3 rounded-xl font-bold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}
+            className={`mt-4 w-full py-3 rounded-full font-semibold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-white text-black hover:bg-neutral-200'}`}
           >
             {sessionActive ? `End Workout · ${formatDuration(elapsedSeconds)}` : 'Start Workout'}
           </button>
         </div>
 
         <div className="flex-1 p-6 overflow-y-auto">
-          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Select Exercise</h2>
+          <h2 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">Select Exercise</h2>
           <div className="space-y-2">
             {exercises.map(ex => (
               <button
                 key={ex.id}
                 onClick={() => setMode(ex.id)}
-                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 border ${
+                className={`w-full text-left px-4 py-3 rounded-2xl transition-all duration-200 border ${
                   mode === ex.id
-                    ? 'bg-cyan-900/30 border-cyan-500/50 text-cyan-300'
-                    : 'bg-gray-800/50 border-gray-700 hover:bg-gray-700 text-gray-300'
+                    ? 'bg-white border-white text-black font-medium'
+                    : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.07] text-neutral-300'
                 }`}
               >
                 {ex.name}
@@ -409,14 +408,14 @@ function WorkoutView({ onExit }) {
             ))}
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-800">
+          <div className="mt-8 pt-6 border-t border-white/10">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">AI Voice Coaching</span>
+              <span className="text-sm text-neutral-400">AI Voice Coaching</span>
               <button
                 onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
-                className={`w-12 h-6 rounded-full transition-colors ${isVoiceEnabled ? 'bg-cyan-500' : 'bg-gray-700'} relative`}
+                className={`w-12 h-6 rounded-full transition-colors ${isVoiceEnabled ? 'bg-white' : 'bg-white/15'} relative`}
               >
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${isVoiceEnabled ? 'left-7' : 'left-1'}`} />
+                <div className={`absolute top-1 w-4 h-4 rounded-full transition-transform ${isVoiceEnabled ? 'left-7 bg-black' : 'left-1 bg-white'}`} />
               </button>
             </div>
           </div>
@@ -425,18 +424,20 @@ function WorkoutView({ onExit }) {
 
       {/* Main Content: Camera & UI Overlay */}
       <div className="flex-1 relative bg-black overflow-hidden flex flex-col pt-12 pb-16 md:pt-0 md:pb-0">
-        {/* Video feed (hidden underneath) */}
+        {/* Video feed (hidden underneath) - mirrored (selfie-view) for display only;
+            the raw, unmirrored frame is still what gets sent to MediaPipe/the backend,
+            so landmark data and L/R labeling are unaffected. */}
         <video
           ref={videoRef}
-          className="absolute inset-0 w-full h-full object-contain opacity-70"
+          className="absolute inset-0 w-full h-full object-contain opacity-70 -scale-x-100"
           playsInline
           muted
         />
 
-        {/* Canvas for skeletal lines */}
+        {/* Canvas for skeletal lines - mirrored to match the video underneath */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-contain"
+          className="absolute inset-0 w-full h-full object-contain -scale-x-100"
         />
 
         {/* Glassmorphic UI Overlays */}
@@ -444,16 +445,16 @@ function WorkoutView({ onExit }) {
 
           {/* Top Panel: Telemetry */}
           <div className="flex justify-end">
-            <div className="bg-gray-900/60 backdrop-blur-md border border-gray-700/50 rounded-2xl p-4 min-w-[200px]">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Live Metrics</h3>
+            <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[24px] p-4 min-w-[200px]">
+              <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-2">Live Metrics</h3>
               {telemetry.length > 0 ? (
                 telemetry.map((stat, i) => (
-                  <div key={i} className="text-sm font-mono text-cyan-100 mb-1">
+                  <div key={i} className="text-sm font-mono text-neutral-300 mb-1">
                     {stat}
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-gray-500 italic">No telemetry data...</div>
+                <div className="text-sm text-neutral-600 italic">No telemetry data...</div>
               )}
             </div>
           </div>
@@ -461,14 +462,14 @@ function WorkoutView({ onExit }) {
           {/* Bottom Panel: Dynamic Feedback */}
           <div className="flex justify-center mb-24 md:mb-10">
             <div
-              className="px-8 py-4 rounded-full border shadow-2xl transition-all duration-300 backdrop-blur-md"
+              className="px-8 py-4 rounded-full border shadow-2xl transition-all duration-300 backdrop-blur-2xl"
               style={{
-                backgroundColor: 'rgba(17, 24, 39, 0.8)',
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
                 borderColor: color,
                 boxShadow: `0 0 20px ${color.replace(')', ', 0.2)').replace('rgb', 'rgba')}`
               }}
             >
-              <h2 className="text-3xl font-bold tracking-wide" style={{ color: color }}>
+              <h2 className="text-3xl font-semibold tracking-tight" style={{ color: color }}>
                 {feedback}
               </h2>
             </div>
@@ -478,13 +479,13 @@ function WorkoutView({ onExit }) {
       </div>
 
       {/* Mobile bottom bar: exercise picker */}
-      <div className="flex md:hidden fixed bottom-0 inset-x-0 z-30 bg-gray-900/90 backdrop-blur border-t border-gray-800 overflow-x-auto whitespace-nowrap px-3 py-2 gap-2">
+      <div className="flex md:hidden fixed bottom-0 inset-x-0 z-30 bg-black/90 backdrop-blur border-t border-white/10 overflow-x-auto whitespace-nowrap px-3 py-2 gap-2">
         {exercises.map(ex => (
           <button
             key={ex.id}
             onClick={() => setMode(ex.id)}
             className={`inline-block px-4 py-2 mr-2 rounded-full text-xs font-semibold border ${
-              mode === ex.id ? 'bg-cyan-900/40 border-cyan-500/50 text-cyan-300' : 'bg-gray-800/60 border-gray-700 text-gray-300'
+              mode === ex.id ? 'bg-white border-white text-black' : 'bg-white/5 border-white/10 text-neutral-300'
             }`}
           >
             {ex.name}

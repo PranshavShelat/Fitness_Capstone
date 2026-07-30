@@ -16,6 +16,7 @@ from engine import (
     analyze_bicep_curl, analyze_hammer_curl,
     analyze_lateral_raise, analyze_shoulder_press
 )
+from config import PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
 from db import init_db, log_fault
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
@@ -40,10 +41,18 @@ REP_TRANSITIONS = {
     "PRESS": ("UP", "DOWN"),
 }
 
+# Consecutive frames the same fault must be observed before it's logged as a real
+# mishap (~150-250ms at typical webcam framerates) - filters out single-frame
+# pose-tracking noise so it never gets written into a report as fact.
+FAULT_MIN_STREAK = 5
+
 async def process_frame(websocket):
     # Per-connection state - each call to process_frame is a fresh connection,
     # so this is naturally isolated per client (no cross-client leakage).
-    session = {"stage": "UP", "prev_back": 0, "mode": None, "last_plank_ts": None, "last_fault": None}
+    session = {
+        "stage": "UP", "prev_back": 0, "mode": None, "last_plank_ts": None,
+        "fault_candidate": None, "fault_streak": 0, "fault_logged": False,
+    }
 
     async for message in websocket:
         try:
@@ -90,7 +99,9 @@ async def process_frame(websocket):
                 session["stage"] = "UP"
                 session["prev_back"] = 0
                 session["last_plank_ts"] = None
-                session["last_fault"] = None
+                session["fault_candidate"] = None
+                session["fault_streak"] = 0
+                session["fault_logged"] = False
             session["mode"] = mode
 
             prev_stage = session["stage"]
@@ -117,7 +128,9 @@ async def process_frame(websocket):
             elif mode == "LATERAL":
                 fb, clr, session["stage"], tel = analyze_lateral_raise(landmarks, session["stage"])
             elif mode == "PRESS":
-                fb, clr, session["stage"], tel = analyze_shoulder_press(landmarks, session["stage"])
+                fb, clr, session["stage"], tel = analyze_shoulder_press(
+                    landmarks, session["stage"], PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
+                )
 
             # Detect a completed rep via the worked -> rest stage transition
             rep_completed = False
@@ -134,15 +147,28 @@ async def process_frame(websocket):
                     plank_hold_delta = min(now - session["last_plank_ts"], 2.0)
                 session["last_plank_ts"] = now
 
-            # Log a mishap on the rising edge only (don't spam a row every frame
-            # a fault is sustained). Keyed by session_id (not this connection) so
-            # it survives a reconnect - only reset here happens on mode switch above.
-            if fb in MISHAP_EXPLANATIONS and fb != session["last_fault"]:
-                if session_id:
-                    await asyncio.to_thread(log_fault, session_id, mode, fb, json.dumps(raw_landmarks))
-                session["last_fault"] = fb
-            elif fb not in MISHAP_EXPLANATIONS:
-                session["last_fault"] = None
+            # Only log a mishap once it's been sustained for a few consecutive frames -
+            # a single-frame reading can be pose-tracking noise (jitter, brief camera-angle
+            # skew) rather than a real, repeated form issue, and that noise would otherwise
+            # end up quoted as fact in the PDF report. Logs once per sustained streak (not
+            # every frame after), keyed by session_id (not this connection) so it survives
+            # a reconnect - only reset here happens on mode switch above.
+            if fb in MISHAP_EXPLANATIONS:
+                if fb == session["fault_candidate"]:
+                    session["fault_streak"] += 1
+                else:
+                    session["fault_candidate"] = fb
+                    session["fault_streak"] = 1
+                    session["fault_logged"] = False
+
+                if session["fault_streak"] >= FAULT_MIN_STREAK and not session["fault_logged"]:
+                    if session_id:
+                        await asyncio.to_thread(log_fault, session_id, mode, fb)
+                    session["fault_logged"] = True
+            else:
+                session["fault_candidate"] = None
+                session["fault_streak"] = 0
+                session["fault_logged"] = False
 
             # Convert BGR (OpenCV) color to Hex or RGB string for CSS
             css_color = f"rgb({clr[2]}, {clr[1]}, {clr[0]})"

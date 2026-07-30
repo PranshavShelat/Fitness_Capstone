@@ -13,7 +13,6 @@ def init_db():
                 session_id TEXT NOT NULL,
                 mode TEXT NOT NULL,
                 message TEXT NOT NULL,
-                landmarks_json TEXT NOT NULL,
                 occurred_at REAL NOT NULL
             )
         """)
@@ -22,12 +21,12 @@ def init_db():
         conn.close()
 
 
-def log_fault(session_id, mode, message, landmarks_json):
+def log_fault(session_id, mode, message):
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
-            "INSERT INTO fault_events (session_id, mode, message, landmarks_json, occurred_at) VALUES (?, ?, ?, ?, ?)",
-            (session_id, mode, message, landmarks_json, time.time()),
+            "INSERT INTO fault_events (session_id, mode, message, occurred_at) VALUES (?, ?, ?, ?)",
+            (session_id, mode, message, time.time()),
         )
         conn.commit()
     finally:
@@ -38,7 +37,7 @@ def get_faults(session_id):
     conn = sqlite3.connect(DB_PATH)
     try:
         cursor = conn.execute(
-            "SELECT mode, message, landmarks_json, occurred_at FROM fault_events WHERE session_id = ? ORDER BY occurred_at",
+            "SELECT mode, message, occurred_at FROM fault_events WHERE session_id = ? ORDER BY occurred_at",
             (session_id,),
         )
         return cursor.fetchall()

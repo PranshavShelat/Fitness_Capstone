@@ -1,4 +1,3 @@
-import json
 import os
 import re
 from datetime import datetime
@@ -8,7 +7,7 @@ from google import genai
 
 from db import get_faults, delete_faults
 from injury_knowledge import MISHAP_EXPLANATIONS
-from pose_diagram import render_fault_diagram
+from anatomy_diagram import render_fault_diagram
 
 GEMINI_MODEL = "gemini-2.5-flash"
 SECTION_MARKER = "===FAULT_{}==="
@@ -16,32 +15,29 @@ REPORTS_DIR = "reports"
 
 
 def summarize_faults(rows):
-    """rows: list of (mode, message, landmarks_json, occurred_at) tuples from db.get_faults.
+    """rows: list of (mode, message, occurred_at) tuples from db.get_faults.
     Groups by (mode, message) so the same message on two different exercises
     (e.g. "TUCK ELBOWS IN" on both Bicep and Hammer curls) is tracked separately.
-    Keeps one representative landmark snapshot (the first occurrence) per group -
-    used only to draw that fault's diagram, and an internal `count` used only to
-    pick sort order/representative row - never surfaced in the prompt or PDF text,
-    since per-frame occurrence counts are noisy and don't mean what they look like.
+    Keeps an internal `count` used only to pick sort order - never surfaced in
+    the prompt or PDF text, since per-frame occurrence counts are noisy and
+    don't mean what they look like.
     """
-    grouped = {}
-    for mode, message, landmarks_json, _occurred_at in rows:
+    counts = {}
+    for mode, message, _occurred_at in rows:
         key = (mode, message)
-        if key not in grouped:
-            grouped[key] = {"count": 0, "landmarks": json.loads(landmarks_json)}
-        grouped[key]["count"] += 1
+        counts[key] = counts.get(key, 0) + 1
 
     summary = []
-    for (mode, message), data in grouped.items():
+    for (mode, message), count in counts.items():
         info = MISHAP_EXPLANATIONS.get(message, {})
         summary.append({
             "mode": mode,
             "message": message,
-            "count": data["count"],
-            "landmarks": data["landmarks"],
+            "count": count,
             "label": info.get("label", message.title()),
             "explanation": info.get("explanation", ""),
-            "highlight": info.get("highlight", []),
+            "image": info.get("image"),
+            "region": info.get("region"),
         })
     summary.sort(key=lambda fault: fault["count"], reverse=True)
     return summary
@@ -139,10 +135,10 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
             pdf.set_font("Helvetica", "B", 12)
             _line(pdf, 8, fault["label"])
 
-            if fault["highlight"]:
-                diagram = render_fault_diagram(fault["landmarks"], fault["highlight"], fault["label"])
+            if fault["image"] and fault["region"]:
+                diagram = render_fault_diagram(fault["image"], fault["region"], fault["label"])
                 pdf.set_x(pdf.l_margin)
-                pdf.image(diagram, w=60)
+                pdf.image(diagram, w=80)
 
             pdf.set_font("Helvetica", "", 11)
             _line(pdf, 7, paragraph or fault["explanation"])

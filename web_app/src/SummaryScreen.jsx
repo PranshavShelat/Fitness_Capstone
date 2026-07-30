@@ -11,35 +11,35 @@ function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises,
   const totalReps = Object.values(repCounts).reduce((sum, n) => sum + n, 0);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-950/90 backdrop-blur-md p-6">
-      <div className="w-full max-w-md bg-gray-900/60 backdrop-blur-md border border-gray-700/50 rounded-2xl p-8 shadow-2xl">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Workout Complete</h2>
-        <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500 mb-6">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
+      <div className="w-full max-w-md bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[28px] p-8 shadow-2xl">
+        <h2 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-1">Workout Complete</h2>
+        <p className="text-4xl font-semibold tracking-tight mb-6">
           {formatDuration(elapsedSeconds)}
         </p>
 
         <div className="space-y-2 mb-6">
           {repExercises.map(ex => (
             <div key={ex.id} className="flex items-center justify-between text-sm">
-              <span className="text-gray-300">{ex.name}</span>
-              <span className="font-mono text-cyan-100">{repCounts[ex.id] || 0} reps</span>
+              <span className="text-neutral-400">{ex.name}</span>
+              <span className="font-mono text-neutral-200">{repCounts[ex.id] || 0} reps</span>
             </div>
           ))}
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-300">Plank Hold</span>
-            <span className="font-mono text-cyan-100">{Math.round(plankHoldSeconds)}s</span>
+            <span className="text-neutral-400">Plank Hold</span>
+            <span className="font-mono text-neutral-200">{Math.round(plankHoldSeconds)}s</span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-gray-800 mb-6">
-          <span className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Reps</span>
-          <span className="text-xl font-bold text-cyan-300">{totalReps}</span>
+        <div className="flex items-center justify-between pt-4 border-t border-white/10 mb-6">
+          <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">Total Reps</span>
+          <span className="text-xl font-semibold text-white">{totalReps}</span>
         </div>
 
         <button
           onClick={onGenerateReport}
           disabled={reportStatus === 'generating'}
-          className="w-full mb-2 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          className="w-full mb-2 py-3 rounded-full font-semibold bg-white text-black hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {reportStatus === 'generating' ? 'Generating Report...' : 'Generate Injury Report'}
         </button>
@@ -50,13 +50,13 @@ function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises,
         <div className="flex flex-col gap-2">
           <button
             onClick={onDismiss}
-            className="w-full py-3 rounded-xl font-bold bg-cyan-600 hover:bg-cyan-500 transition-colors"
+            className="w-full py-3 rounded-full font-semibold border border-white/15 text-white hover:bg-white/5 transition-colors"
           >
             Start New Workout
           </button>
           <button
             onClick={onBackToDashboard}
-            className="w-full py-3 rounded-xl font-semibold bg-transparent border border-gray-700 text-gray-300 hover:bg-gray-800/50 transition-colors"
+            className="w-full py-3 rounded-full font-medium bg-transparent text-neutral-500 hover:text-neutral-300 transition-colors"
           >
             Back to Dashboard
           </button>
