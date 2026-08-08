@@ -110,6 +110,18 @@ MISHAP_EXPLANATIONS = {
         "image": "shoulder.png",
         "region": (0.35, 0.15, 0.78, 0.68),
     },
+    "DON'T FLARE ELBOWS (PRESS STRAIGHT UP)": {
+        "label": "Goal-Post Press",
+        "explanation": (
+            "The elbows rose up and out to the sides well before the arm had actually "
+            "extended enough to justify that height - closer to a lateral raise than a "
+            "true overhead press. This loads the shoulder in a wide, unsupported position "
+            "for much of the rep, increasing the risk of shoulder impingement instead of "
+            "driving the weight in a controlled, vertical path."
+        ),
+        "image": "shoulder.png",
+        "region": (0.45, 0.10, 0.90, 0.45),
+    },
     "ELBOWS TOO FAR FORWARD (ROTATE BACK)": {
         "label": "Elbows Drifting Forward",
         "explanation": (

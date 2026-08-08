@@ -4,7 +4,8 @@ from utils import calculate_angle
 from config import (
     SQUAT_SETTINGS, PLANK_SETTINGS, DIP_SETTINGS,
     PUSHUP_SETTINGS, PULLUP_SETTINGS, TWIST_SETTINGS,
-    BICEP_SETTINGS, HAMMER_SETTINGS, LATERAL_SETTINGS, PRESS_SETTINGS
+    BICEP_SETTINGS, HAMMER_SETTINGS, LATERAL_SETTINGS, PRESS_SETTINGS,
+    PRESS_ELBOW_RISE_REFERENCE
 )
 
 mp_pose = mp.solutions.pose
@@ -172,36 +173,29 @@ def analyze_bicep_curl(landmarks, stage):
     s = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
     e = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
     w = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
-    
-    thumb = [landmarks[mp_pose.PoseLandmark.RIGHT_THUMB.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_THUMB.value].y]
-    pinky = [landmarks[mp_pose.PoseLandmark.RIGHT_PINKY.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_PINKY.value].y]
-    
+
     elbow_angle = calculate_angle(s, e, w)
     flare_angle = calculate_angle(h, s, e)
-    lateral_flare = abs(e[0] - s[0]) 
-    
-    is_hammer_grip = (pinky[1] - thumb[1]) > 0.025
-    
+    lateral_flare = abs(e[0] - s[0])
+
     if elbow_angle > BICEP_SETTINGS["EXTENDED"]: stage = "DOWN"
     elif elbow_angle < BICEP_SETTINGS["TARGET_FLEX"] + BICEP_SETTINGS["BUFFER"] and stage == "DOWN": stage = "UP"
 
     feedback, color = "READY", (255, 255, 255)
-    
+
     if flare_angle > 25 or lateral_flare > 0.15:
-        feedback, color = "TUCK ELBOWS IN", (0, 0, 255) 
-    elif is_hammer_grip and elbow_angle < 130:
-        feedback, color = "PALMS UP! (WRONG GRIP)", (0, 0, 255)
+        feedback, color = "TUCK ELBOWS IN", (0, 0, 255)
     elif elbow_angle > BICEP_SETTINGS["EXTENDED"] - 10:
         feedback, color = "ARMS EXTENDED", (255, 255, 255)
     elif elbow_angle > BICEP_SETTINGS["TARGET_FLEX"] + BICEP_SETTINGS["BUFFER"]:
         if stage == "DOWN":
-            feedback, color = "CURL HIGHER", (0, 165, 255) 
+            feedback, color = "CURL HIGHER", (0, 165, 255)
         else:
-            feedback, color = "LOWER WEIGHT SLOWLY", (0, 255, 255) 
+            feedback, color = "LOWER WEIGHT SLOWLY", (0, 255, 255)
     else:
-        feedback, color = "PERFECT PEAK!", (0, 255, 0) 
+        feedback, color = "PERFECT PEAK!", (0, 255, 0)
 
-    tel = [f"Elbow: {int(elbow_angle)}", f"Grip Check: {'Hammer' if is_hammer_grip else 'Bicep'}"]
+    tel = [f"Elbow: {int(elbow_angle)}"]
     return feedback, color, stage, tel
 
 # --- 8. HAMMER CURLS ---
@@ -210,25 +204,18 @@ def analyze_hammer_curl(landmarks, stage):
     s = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
     e = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
     w = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
-    
-    thumb = [landmarks[mp_pose.PoseLandmark.RIGHT_THUMB.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_THUMB.value].y]
-    pinky = [landmarks[mp_pose.PoseLandmark.RIGHT_PINKY.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_PINKY.value].y]
-    
+
     elbow_angle = calculate_angle(s, e, w)
     flare_angle = calculate_angle(h, s, e)
     lateral_flare = abs(e[0] - s[0])
-    
-    is_bicep_grip = abs(pinky[1] - thumb[1]) < 0.015 or thumb[1] > pinky[1]
-    
+
     if elbow_angle > HAMMER_SETTINGS["EXTENDED"]: stage = "DOWN"
     elif elbow_angle < HAMMER_SETTINGS["TARGET_FLEX"] + HAMMER_SETTINGS["BUFFER"]: stage = "UP"
 
     feedback, color = "READY", (255, 255, 255)
-    
-    if flare_angle > 35 or lateral_flare > 0.15: 
-        feedback, color = "TUCK ELBOWS IN", (0, 0, 255) 
-    elif is_bicep_grip and elbow_angle < 130:
-        feedback, color = "USE NEUTRAL GRIP", (0, 0, 255)
+
+    if flare_angle > 35 or lateral_flare > 0.15:
+        feedback, color = "TUCK ELBOWS IN", (0, 0, 255)
     elif elbow_angle > HAMMER_SETTINGS["EXTENDED"] - 10:
         feedback, color = "ARMS EXTENDED", (255, 255, 255)
     elif elbow_angle > HAMMER_SETTINGS["TARGET_FLEX"] + HAMMER_SETTINGS["BUFFER"]:
@@ -239,7 +226,7 @@ def analyze_hammer_curl(landmarks, stage):
     else:
         feedback, color = "PERFECT HAMMER", (0, 255, 0)
 
-    tel = [f"Elbow: {int(elbow_angle)}", f"Grip Check: {'Bicep' if is_bicep_grip else 'Hammer'}"]
+    tel = [f"Elbow: {int(elbow_angle)}"]
     return feedback, color, stage, tel
 
 # --- 9. LATERAL RAISES ---
@@ -364,6 +351,20 @@ def analyze_shoulder_press(landmarks, stage, elbow_forward_reference=None, elbow
                 elbows_back = (elbow_z_rel_shoulder - midpoint) / half_gap > PRESS_SETTINGS["ELBOW_BACK_MARGIN"]
                 break
 
+    # "Goal post" fault: elbows flared up and out to the sides before the press
+    # has actually earned that height (more of a lateral raise than a real
+    # overhead press) - unlike the z-depth checks above, this uses x/y
+    # (shoulder.y - elbow.y), which climbs smoothly and TIGHTLY with elbow-bend
+    # angle in real correct-form data (config.py's PRESS_ELBOW_RISE_REFERENCE,
+    # built straight from golden_dataset/Shoulder press.csv - no per-user
+    # calibration needed, same as BACK_LEAN_MAX and the wrist-vs-elbow check).
+    elbow_above_shoulder = avg_shoulder_y - avg_elbow_y
+    elbows_flared_up = False
+    for lo, hi, ref_mean, ref_stdev in PRESS_ELBOW_RISE_REFERENCE:
+        if lo <= avg_angle < hi and ref_stdev > 0:
+            elbows_flared_up = (elbow_above_shoulder - ref_mean) / ref_stdev > PRESS_SETTINGS["ELBOW_RISE_STDEV_MAX"]
+            break
+
     # wrist.y vs elbow.y IS phase-invariant, though: checked against the same golden
     # dataset, the wrist stays above the elbow (wrist_y - elbow_y is negative) on
     # every single one of 204 frames of a real correct press (mean -0.26, and even
@@ -413,7 +414,12 @@ def analyze_shoulder_press(landmarks, stage, elbow_forward_reference=None, elbow
     elif elbows_back:
         feedback, color = "ELBOWS TOO FAR BACK (BRING FORWARD SLIGHTLY)", (0, 0, 255)
 
-    # Priority 6: Prevent the 1-arm phone-holding paradox. Threshold is intentionally
+    # Priority 6: "Goal post" / lateral-raise-style press - elbows flared up and
+    # out ahead of where a real press would have raised them yet - see note above.
+    elif elbows_flared_up:
+        feedback, color = "DON'T FLARE ELBOWS (PRESS STRAIGHT UP)", (0, 0, 255)
+
+    # Priority 7: Prevent the 1-arm phone-holding paradox. Threshold is intentionally
     # generous (55 degrees) - a single 2D webcam is very sensitive to camera angle, so
     # normal (non-uneven) presses can easily show a real 20-30 degree L/R gap just from
     # not standing perfectly square to the camera. A tighter threshold false-triggers
@@ -421,15 +427,15 @@ def analyze_shoulder_press(landmarks, stage, elbow_forward_reference=None, elbow
     elif abs(r_angle - l_angle) > 55:
         feedback, color = "UNEVEN PRESS (BALANCE ARMS)", (0, 0, 255)
 
-    # Priority 7: Perfect lockout at the top
+    # Priority 8: Perfect lockout at the top
     elif avg_angle > target_ext:
         feedback, color = "PERFECT PRESS!", (0, 255, 0)
 
-    # Priority 8: PURE ELBOW ANGLE DEPTH CHECK (The strict fix you requested)
+    # Priority 9: PURE ELBOW ANGLE DEPTH CHECK (The strict fix you requested)
     elif avg_angle <= target_start:
         feedback, color = "GOOD DEPTH, PRESS UP!", (0, 255, 0)
 
-    # Priority 9: The "Half-Rep" In-Between Zone
+    # Priority 10: The "Half-Rep" In-Between Zone
     else:
         if stage == "UP":
             feedback, color = "LOWER ALL THE WAY DOWN", (0, 165, 255)

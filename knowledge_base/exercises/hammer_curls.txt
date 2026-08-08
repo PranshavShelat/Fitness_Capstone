@@ -1,0 +1,12 @@
+Exercise: Hammer Curls
+Category: Pull accessory (biceps, brachialis, forearms)
+Type: Isolation, dumbbell
+
+Hammer curls use a neutral (palms-facing-in) grip, shifting emphasis onto the brachialis and forearms alongside the biceps. Pairing hammer curls with regular bicep curls on the same arm day gives more complete arm development than either alone.
+
+Rep guidance by goal:
+- Cutting: 15-20 reps per set, 3 sets, short rest (30-45s).
+- Maintaining: 10-15 reps per set, 3 sets.
+- Bulking: 8-12 reps per set with heavier dumbbells, 3-4 sets, rest 60s.
+
+Form risk this app watches for: the elbow drifting forward away from the torso, same failure mode as the regular bicep curl - keeping the elbow at the side isolates the arm rather than turning the movement into a front raise.

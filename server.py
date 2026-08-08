@@ -4,6 +4,7 @@ import os
 import time
 import websockets
 import json
+from urllib.parse import urlsplit, parse_qs
 from dotenv import load_dotenv
 from websockets.datastructures import Headers
 from websockets.http11 import Response
@@ -20,6 +21,10 @@ from config import PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
 from db import init_db, log_fault
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
+from plan import generate_plan
+
+VALID_GOALS = ("CUT", "MAINTAIN", "BULK")
+VALID_DIETS = ("VEG_EGGS", "VEG_NO_EGGS", "NON_VEG")
 
 # Mock class to mimic MediaPipe Landmark structure for engine.py
 class MockLandmark:
@@ -195,12 +200,15 @@ def _json_response(status_code, reason, payload):
     return Response(status_code, reason, headers, json.dumps(payload).encode("utf-8"))
 
 
-def handle_http_request(connection, request):
+async def handle_http_request(connection, request):
     # Lets the Dashboard (which never opens the fitness-engine WebSocket) list and
-    # download saved reports via plain HTTP GETs on this same port - no second
-    # server/framework needed. Anything else falls through (returns None) to the
-    # normal WebSocket handshake.
-    if request.path == "/reports":
+    # download saved reports, and generate a nutrition/workout plan, via plain HTTP
+    # GETs on this same port - no second server/framework needed. Anything else
+    # falls through (returns None) to the normal WebSocket handshake.
+    parsed = urlsplit(request.path)
+    path = parsed.path
+
+    if path == "/reports":
         os.makedirs(REPORTS_DIR, exist_ok=True)
         entries = []
         for filename in os.listdir(REPORTS_DIR):
@@ -211,8 +219,8 @@ def handle_http_request(connection, request):
         entries.sort(key=lambda e: e["created_at"], reverse=True)
         return _json_response(200, "OK", entries)
 
-    if request.path.startswith("/reports/"):
-        filename = os.path.basename(request.path[len("/reports/"):])
+    if path.startswith("/reports/"):
+        filename = os.path.basename(path[len("/reports/"):])
         full_path = os.path.join(REPORTS_DIR, filename)
         if not filename.endswith(".pdf") or not os.path.isfile(full_path):
             return _json_response(404, "Not Found", {"error": "Report not found"})
@@ -223,12 +231,35 @@ def handle_http_request(connection, request):
         headers["Access-Control-Allow-Origin"] = "*"
         return Response(200, "OK", headers, pdf_bytes)
 
+    if path == "/plan":
+        query = parse_qs(parsed.query)
+        try:
+            height_cm = float(query.get("height", [""])[0])
+            weight_kg = float(query.get("weight", [""])[0])
+            goal = query.get("goal", [""])[0].upper()
+            diet = query.get("diet", [""])[0].upper()
+            if height_cm <= 0 or weight_kg <= 0 or goal not in VALID_GOALS or diet not in VALID_DIETS:
+                raise ValueError
+        except (ValueError, IndexError):
+            return _json_response(400, "Bad Request", {
+                "error": "height, weight, goal (CUT/MAINTAIN/BULK) and diet (VEG_EGGS/VEG_NO_EGGS/NON_VEG) are required"
+            })
+
+        try:
+            plan = await asyncio.to_thread(generate_plan, height_cm, weight_kg, goal, diet)
+            return _json_response(200, "OK", plan)
+        except Exception as e:
+            return _json_response(500, "Internal Server Error", {"error": str(e)})
+
     return None
 
 
 async def main():
     init_db()
-    async with websockets.serve(process_frame, "localhost", 8000, process_request=handle_http_request):
+    # open_timeout bounds the whole opening handshake, which includes handle_http_request -
+    # the default 10s is fine for a websocket handshake but too short for /plan, which calls
+    # out to Gemini and can take longer than that.
+    async with websockets.serve(process_frame, "localhost", 8000, process_request=handle_http_request, open_timeout=60):
         print("Python Fitness Engine WebSocket Server running on ws://localhost:8000")
         await asyncio.Future()  # run forever
 
