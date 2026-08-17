@@ -774,6 +774,11 @@ function MealPlanContent({ planState }) {
 
   return (
     <div className="space-y-3">
+      {planState.plan.dailyCalories != null && (
+        <p className="text-xs text-neutral-500">
+          Daily target: ~{planState.plan.dailyCalories} kcal &middot; ~{planState.plan.dailyProteinG}g protein
+        </p>
+      )}
       <div className="space-y-2 max-h-64 overflow-y-auto pr-1 -mr-1">
         {daysToShow.map(day => (
           <div key={day.day} className="bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3">
