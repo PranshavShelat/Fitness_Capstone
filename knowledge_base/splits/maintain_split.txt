@@ -1,5 +1,10 @@
 Goal: Maintaining (holding current weight and muscle, general fitness)
 
-Training strategy: A balanced push/pull/legs split at moderate rep ranges (10-15) and moderate rest (60-90s) is enough to maintain muscle and cardiovascular fitness without the extra recovery demand of a bulk or the elevated volume of a cut. Consistency across the week matters more than pushing intensity in any single session.
+Training strategy: A balanced Push/Pull/Legs (PPL) split at moderate rep ranges (8-15) and moderate rest (60-90s) is enough to maintain muscle and cardiovascular fitness without the extra recovery demand of a bulk or the elevated frequency of a cut. Consistency across the week matters more than pushing intensity in any single session.
 
-Suggested weekly structure using this app's tracked exercises: a "Push" day (Pushups, Shoulder Press, Tricep Dips, Lateral Raises), a "Pull" day (Pullups, Bicep Curls, Hammer Curls), and a "Legs & Core" day (Squats, Planks, Russian Twists), 3-4 training days per week with rest days in between, repeating the same three-day rotation.
+Suggested weekly structure, covering every muscle group properly each time it comes up:
+- Push (chest/shoulders/triceps): pick 4-5 from Bench Press, Inclined Bench Press, Decline Bench Press, Shoulder Press, Pushups, Chest Fly Machine, Tricep Dips, Tricep Pushdown, Lateral Raises.
+- Pull (back/biceps): pick 4-5 from Pullups, Lat Pulldown, T-Bar Row, Bicep Curls, Hammer Curls.
+- Legs & Core: a complete leg day always needs a quad-dominant lift (Squats or Leg Extension), a hamstring/glute-dominant lift (Deadlift, Romanian Deadlift, or Hip Thrust), and core work (Planks, Russian Twists, or Leg Raises) - never just one leg exercise carrying the whole day.
+
+Run the Push/Pull/Legs cycle once through the week (3 training days) with rest days in between, repeating the same three-day rotation. Rotate which specific exercises fill each day's slots from week to week for variety, even though the day structure stays the same.

@@ -91,7 +91,7 @@ def _dedupe_sources(chunks):
             labels.append(label)
 
     if has_exercise_chunk:
-        labels.insert(0, "App's Tracked Exercise Library (all 10 supported movements)")
+        labels.insert(0, "App's Exercise Reference Guides (rep ranges + form cues for the full exercise catalog)")
 
     return labels
 
@@ -202,8 +202,10 @@ def retrieve_by_id(chunk_id):
 
 def retrieve_plan_context(goal, bmi_category, diet_category):
     """Assembles the full retrieval-augmented context for one profile:
-    - every exercise chunk (always relevant - the app can only track these 10 movements
-      regardless of goal, so this is a deterministic scope rather than a similarity guess)
+    - every exercise chunk (always relevant - the plan can draw from any exercise this
+      app has reference movement data for regardless of goal, so this is a deterministic
+      scope rather than a similarity guess). k is set comfortably above the current
+      catalog size so adding more exercise docs later doesn't silently truncate it.
     - the goal-matching split strategy, semantically retrieved from splits/
     - the goal-matching nutrition strategy, semantically retrieved from nutrition/ goal docs
     - a BMI-context chunk, included only when BMI category makes the stated goal risky
@@ -211,7 +213,7 @@ def retrieve_plan_context(goal, bmi_category, diet_category):
     - a handful of supporting paragraphs pulled from the longer source PDFs, filtered to
       the user's goal (plus BMI/general docs where relevant) and ranked within that set
     """
-    exercise_chunks = retrieve("bodyweight and dumbbell exercise", k=10, subdir="exercises")
+    exercise_chunks = retrieve("bodyweight and dumbbell exercise", k=50, subdir="exercises")
 
     goal_query = f"training split and rep ranges for {GOAL_LABELS[goal]}"
     split_chunks = retrieve(goal_query, k=1, subdir="splits")

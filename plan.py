@@ -8,9 +8,16 @@ from rag import retrieve_plan_context
 
 GEMINI_MODEL = "gemini-2.5-flash"
 
-TRACKED_EXERCISES = [
+# The full golden_dataset exercise catalog, not just the 10 the app can give live camera
+# feedback on - a workout PLAN is a broader recommendation than what the real-time form
+# checker happens to support, so it draws from every exercise this project has reference
+# movement data for.
+PLANNABLE_EXERCISES = [
     "Squats", "Planks", "Tricep Dips", "Pushups", "Pullups",
     "Russian Twists", "Bicep Curls", "Hammer Curls", "Lateral Raises", "Shoulder Press",
+    "Bench Press", "Chest Fly Machine", "Deadlift", "Decline Bench Press", "Hip Thrust",
+    "Inclined Bench Press", "Lat Pulldown", "Leg Extension", "Leg Raises",
+    "Romanian Deadlift", "T-Bar Row", "Tricep Pushdown",
 ]
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -63,10 +70,18 @@ ranges, split structure, and nutrition/diet guidance it describes:
 Rules:
 - {DIET_RULES[diet_category]} This is a strict, non-negotiable requirement - re-check every single \
 meal against it before finalizing.
-- The workout plan may ONLY use exercises from this exact list (this app can only track form for \
-these): {", ".join(TRACKED_EXERCISES)}. Do not invent or substitute any other exercise.
+- The workout plan may ONLY use exercises from this exact list (every exercise this app has \
+reference movement data for): {", ".join(PLANNABLE_EXERCISES)}. Do not invent or substitute any \
+other exercise.
+- Use a genuinely wide spread of that list across the week - do not repeatedly lean on the same \
+small handful of exercises. Any leg-focused day specifically must include at least one quad-dominant \
+lift (Squats or Leg Extension), one hamstring/glute-dominant lift (Deadlift, Romanian Deadlift, or \
+Hip Thrust), and core work (Planks, Russian Twists, or Leg Raises) - never just one or two exercises \
+carrying the entire day. If the plan repeats the same day structure more than once in the week (e.g. \
+a 6-day cycle), vary which specific exercises fill each day's slots between repeats rather than \
+listing the identical exercises both times.
 - Every day of the week must appear, in order (Monday-Sunday). Rest days are allowed and should say so.
-- For each training day, list 3-6 exercises with a specific set x rep scheme (e.g. "3x12").
+- For each training day, list 4-6 exercises with a specific set x rep scheme (e.g. "3x12").
 - For each day, also give a short meal plan: breakfast, lunch, dinner, and one snack, as brief \
 plain-English descriptions (not exact gram-level macros).
 - Add one short "notes" string per day only if there's something genuinely useful to flag for that \
