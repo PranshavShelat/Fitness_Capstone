@@ -21,10 +21,12 @@ from config import PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
 from db import init_db, log_fault
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
-from plan import generate_plan
+from plan import generate_workout_plan, generate_meal_plan
+from coach_agent import create_chat_session, send_chat_message
 
 VALID_GOALS = ("CUT", "MAINTAIN", "BULK")
 VALID_DIETS = ("VEG_EGGS", "VEG_NO_EGGS", "NON_VEG")
+VALID_SEXES = ("MALE", "FEMALE")
 
 # Mock class to mimic MediaPipe Landmark structure for engine.py
 class MockLandmark:
@@ -57,6 +59,9 @@ async def process_frame(websocket):
     session = {
         "stage": "UP", "prev_back": 0, "mode": None, "last_plank_ts": None,
         "fault_candidate": None, "fault_streak": 0, "fault_logged": False,
+        # Both lazily created on the first chat message - "chat_client" must be kept
+        # alive here for as long as "chat" is in use (see create_chat_session).
+        "chat": None, "chat_client": None,
     }
 
     async for message in websocket:
@@ -71,6 +76,7 @@ async def process_frame(websocket):
                         data.get("duration_seconds", 0),
                         data.get("rep_counts", {}),
                         data.get("plank_hold_seconds", 0),
+                        data.get("profile"),
                     )
                     await websocket.send(json.dumps({
                         "action": "report_ready",
@@ -81,6 +87,26 @@ async def process_frame(websocket):
                     await websocket.send(json.dumps({
                         "action": "report_error",
                         "message": str(report_error),
+                    }))
+                continue
+
+            if data.get("action") == "chat":
+                try:
+                    # One chat session per WS connection, created on the first message -
+                    # bound to whatever profile/session_id came in with that first message,
+                    # then reused (with full conversation memory) for the rest of this
+                    # connection's messages.
+                    if session["chat"] is None:
+                        session["chat_client"], session["chat"] = create_chat_session(
+                            data.get("profile"), data.get("session_id"),
+                            data.get("workout_plan"), data.get("meal_plan"),
+                        )
+                    reply = await asyncio.to_thread(send_chat_message, session["chat"], data.get("message", ""))
+                    await websocket.send(json.dumps({"action": "chat_reply", "reply": reply}))
+                except Exception as chat_error:
+                    await websocket.send(json.dumps({
+                        "action": "chat_error",
+                        "message": str(chat_error),
                     }))
                 continue
 
@@ -231,22 +257,49 @@ async def handle_http_request(connection, request):
         headers["Access-Control-Allow-Origin"] = "*"
         return Response(200, "OK", headers, pdf_bytes)
 
-    if path == "/plan":
+    if path == "/plan/workout":
         query = parse_qs(parsed.query)
         try:
             height_cm = float(query.get("height", [""])[0])
             weight_kg = float(query.get("weight", [""])[0])
+            age = int(query.get("age", [""])[0])
+            sex = query.get("sex", [""])[0].upper()
             goal = query.get("goal", [""])[0].upper()
-            diet = query.get("diet", [""])[0].upper()
-            if height_cm <= 0 or weight_kg <= 0 or goal not in VALID_GOALS or diet not in VALID_DIETS:
+            if height_cm <= 0 or weight_kg <= 0 or age <= 0 or sex not in VALID_SEXES or goal not in VALID_GOALS:
                 raise ValueError
         except (ValueError, IndexError):
             return _json_response(400, "Bad Request", {
-                "error": "height, weight, goal (CUT/MAINTAIN/BULK) and diet (VEG_EGGS/VEG_NO_EGGS/NON_VEG) are required"
+                "error": "height, weight, age, sex (MALE/FEMALE) and goal (CUT/MAINTAIN/BULK) are required"
             })
 
         try:
-            plan = await asyncio.to_thread(generate_plan, height_cm, weight_kg, goal, diet)
+            plan = await asyncio.to_thread(generate_workout_plan, height_cm, weight_kg, age, sex, goal)
+            return _json_response(200, "OK", plan)
+        except Exception as e:
+            return _json_response(500, "Internal Server Error", {"error": str(e)})
+
+    if path == "/plan/meal":
+        query = parse_qs(parsed.query)
+        try:
+            height_cm = float(query.get("height", [""])[0])
+            weight_kg = float(query.get("weight", [""])[0])
+            age = int(query.get("age", [""])[0])
+            sex = query.get("sex", [""])[0].upper()
+            goal = query.get("goal", [""])[0].upper()
+            diet = query.get("diet", [""])[0].upper()
+            if (
+                height_cm <= 0 or weight_kg <= 0 or age <= 0 or sex not in VALID_SEXES
+                or goal not in VALID_GOALS or diet not in VALID_DIETS
+            ):
+                raise ValueError
+        except (ValueError, IndexError):
+            return _json_response(400, "Bad Request", {
+                "error": "height, weight, age, sex (MALE/FEMALE), goal (CUT/MAINTAIN/BULK) and "
+                         "diet (VEG_EGGS/VEG_NO_EGGS/NON_VEG) are required"
+            })
+
+        try:
+            plan = await asyncio.to_thread(generate_meal_plan, height_cm, weight_kg, age, sex, goal, diet)
             return _json_response(200, "OK", plan)
         except Exception as e:
             return _json_response(500, "Internal Server Error", {"error": str(e)})

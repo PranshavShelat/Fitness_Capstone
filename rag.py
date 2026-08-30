@@ -200,24 +200,40 @@ def retrieve_by_id(chunk_id):
     return []
 
 
-def retrieve_plan_context(goal, bmi_category, diet_category):
-    """Assembles the full retrieval-augmented context for one profile:
+def retrieve_workout_context(goal):
+    """Retrieval-augmented context for JUST the workout half of a plan - independent of
+    retrieve_meal_context so regenerating one never touches the other:
     - every exercise chunk (always relevant - the plan can draw from any exercise this
       app has reference movement data for regardless of goal, so this is a deterministic
       scope rather than a similarity guess). k is set comfortably above the current
       catalog size so adding more exercise docs later doesn't silently truncate it.
     - the goal-matching split strategy, semantically retrieved from splits/
-    - the goal-matching nutrition strategy, semantically retrieved from nutrition/ goal docs
-    - a BMI-context chunk, included only when BMI category makes the stated goal risky
-    - the diet-matching protein/food-source strategy, semantically retrieved from diet/
-    - a handful of supporting paragraphs pulled from the longer source PDFs, filtered to
-      the user's goal (plus BMI/general docs where relevant) and ranked within that set
+    - a handful of supporting paragraphs from the longer workout source PDFs, filtered to
+      the user's goal (plus general docs) and ranked within that set
     """
     exercise_chunks = retrieve("bodyweight and dumbbell exercise", k=50, subdir="exercises")
 
     goal_query = f"training split and rep ranges for {GOAL_LABELS[goal]}"
     split_chunks = retrieve(goal_query, k=1, subdir="splits")
 
+    pdf_workout_chunks = retrieve_pdf_chunks(
+        f"workout program structure and training advice for {GOAL_LABELS[goal]}",
+        category="workouts", goal_tags=[goal, "GENERAL"], k=3,
+    )
+
+    all_chunks = exercise_chunks + split_chunks + pdf_workout_chunks
+    return [c["text"] for c in all_chunks], _dedupe_sources(all_chunks)
+
+
+def retrieve_meal_context(goal, bmi_category, diet_category):
+    """Retrieval-augmented context for JUST the meal half of a plan - independent of
+    retrieve_workout_context so regenerating one never touches the other:
+    - the goal-matching nutrition strategy, semantically retrieved from nutrition/ goal docs
+    - a BMI-context chunk, included only when BMI category makes the stated goal risky
+    - the diet-matching protein/food-source strategy, semantically retrieved from diet/
+    - a handful of supporting paragraphs from the longer nutrition source PDFs, filtered
+      to the user's goal (plus BMI docs where relevant) and ranked within that set
+    """
     nutrition_query = f"daily calorie and macro nutrition guidance for {GOAL_LABELS[goal]}"
     nutrition_chunks = retrieve(nutrition_query, k=1, subdir="nutrition")
 
@@ -231,23 +247,10 @@ def retrieve_plan_context(goal, bmi_category, diet_category):
 
     diet_chunks = retrieve_by_id(DIET_FILES[diet_category])
 
-    nutrition_goal_tags = [goal] + (["BMI"] if bmi_relevant else [])
     pdf_nutrition_chunks = retrieve_pdf_chunks(
         f"meal planning and nutrition advice for {GOAL_LABELS[goal]}",
-        category="nutrition", goal_tags=nutrition_goal_tags, k=3,
+        category="nutrition", goal_tags=[goal] + (["BMI"] if bmi_relevant else []), k=3,
     )
 
-    workout_goal_tags = [goal, "GENERAL"]
-    pdf_workout_chunks = retrieve_pdf_chunks(
-        f"workout program structure and training advice for {GOAL_LABELS[goal]}",
-        category="workouts", goal_tags=workout_goal_tags, k=3,
-    )
-
-    all_chunks = (
-        exercise_chunks + split_chunks + nutrition_chunks + bmi_chunks + diet_chunks
-        + pdf_nutrition_chunks + pdf_workout_chunks
-    )
-
-    context_texts = [c["text"] for c in all_chunks]
-    sources = _dedupe_sources(all_chunks)
-    return context_texts, sources
+    all_chunks = nutrition_chunks + bmi_chunks + diet_chunks + pdf_nutrition_chunks
+    return [c["text"] for c in all_chunks], _dedupe_sources(all_chunks)

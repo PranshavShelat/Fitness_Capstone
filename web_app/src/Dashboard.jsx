@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const WEATHER_CODES = {
   0: { emoji: '☀️', label: 'Clear Sky' },
@@ -62,14 +62,6 @@ function GlassCard({ children, className = '' }) {
     <div className={`bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[28px] p-6 ${className}`}>
       {children}
     </div>
-  );
-}
-
-function ComingSoonBadge() {
-  return (
-    <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-500 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full">
-      Coming Soon
-    </span>
   );
 }
 
@@ -303,19 +295,26 @@ function useFitnessProfile() {
   return { profile, updateProfile, clearProfile, recordNewStats, history, deleteHistoryEntry, clearHistory };
 }
 
+const SEXES = [
+  { id: 'MALE', label: 'Male' },
+  { id: 'FEMALE', label: 'Female' },
+];
+
 function FitnessProfileForm({ initial, onSave, onCancel }) {
   const [heightCm, setHeightCm] = useState(initial?.heightCm ?? '');
   const [weightKg, setWeightKg] = useState(initial?.weightKg ?? '');
+  const [age, setAge] = useState(initial?.age ?? '');
+  const [sex, setSex] = useState(initial?.sex ?? null);
   const [goal, setGoal] = useState(initial?.goal ?? 'MAINTAIN');
   const [diet, setDiet] = useState(initial?.diet ?? null);
   const [eatsEggs, setEatsEggs] = useState(initial?.eatsEggs ?? null);
 
   const dietResolved = diet === 'NON_VEG' || (diet === 'VEG' && eatsEggs !== null);
-  const canSave = Number(heightCm) > 0 && Number(weightKg) > 0 && dietResolved;
+  const canSave = Number(heightCm) > 0 && Number(weightKg) > 0 && Number(age) > 0 && sex && dietResolved;
 
   return (
     <div className="space-y-3 mb-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <label className="block">
           <span className="text-xs text-neutral-500">Height (cm)</span>
           <input
@@ -336,6 +335,35 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
             className="mt-1 w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
           />
         </label>
+        <label className="block">
+          <span className="text-xs text-neutral-500">Age</span>
+          <input
+            type="number"
+            value={age}
+            onChange={e => setAge(e.target.value)}
+            placeholder="28"
+            className="mt-1 w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
+          />
+        </label>
+      </div>
+
+      <div>
+        <span className="text-xs text-neutral-500 mb-1.5 block">Sex</span>
+        <div className="flex gap-2">
+          {SEXES.map(s => (
+            <button
+              key={s.id}
+              onClick={() => setSex(s.id)}
+              className={`flex-1 text-xs font-medium py-2 rounded-full border transition-colors ${
+                sex === s.id
+                  ? 'bg-white text-black border-white'
+                  : 'bg-white/[0.03] border-white/10 text-neutral-300 hover:bg-white/[0.07]'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div>
@@ -400,7 +428,10 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
       <div className="flex gap-2 pt-1">
         <button
           disabled={!canSave}
-          onClick={() => onSave({ heightCm: Number(heightCm), weightKg: Number(weightKg), goal, diet, eatsEggs: diet === 'VEG' ? eatsEggs : null })}
+          onClick={() => onSave({
+            heightCm: Number(heightCm), weightKg: Number(weightKg), age: Number(age), sex, goal, diet,
+            eatsEggs: diet === 'VEG' ? eatsEggs : null,
+          })}
           className="flex-1 py-2 rounded-full text-sm font-semibold bg-white text-black hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Save
@@ -517,6 +548,7 @@ function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, h
   const heightM = profile.heightCm / 100;
   const bmi = profile.weightKg / (heightM * heightM);
   const goalLabel = GOALS.find(g => g.id === profile.goal)?.label ?? profile.goal;
+  const sexLabel = SEXES.find(s => s.id === profile.sex)?.label ?? profile.sex;
 
   return (
     <div>
@@ -525,7 +557,7 @@ function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, h
           <p className="text-lg font-semibold tracking-tight">
             BMI {bmi.toFixed(1)} <span className="text-neutral-500 text-sm font-normal">&middot; {bmiCategory(bmi)}</span>
           </p>
-          <p className="text-sm text-neutral-400">Goal: {goalLabel} &middot; {dietLabel(profile)}</p>
+          <p className="text-sm text-neutral-400">{profile.age} yrs &middot; {sexLabel} &middot; Goal: {goalLabel} &middot; {dietLabel(profile)}</p>
         </div>
         {confirmingClearProfile ? (
           <div className="flex items-center gap-3 shrink-0">
@@ -609,18 +641,25 @@ function FitnessProfileGate({ profile, updateProfile, clearProfile, recordNewSta
   );
 }
 
-const PLAN_STORAGE_KEY = 'fitness_plan';
+const WORKOUT_PLAN_STORAGE_KEY = 'fitness_workout_plan';
+const MEAL_PLAN_STORAGE_KEY = 'fitness_meal_plan';
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function profileKey(profile) {
+// Deliberately separate keys - the workout plan doesn't depend on diet at all, so a diet
+// change alone shouldn't mark it stale (only the meal plan needs to react to that).
+function workoutProfileKey(profile) {
+  return profile ? `${profile.heightCm}-${profile.weightKg}-${profile.age}-${profile.sex}-${profile.goal}` : null;
+}
+
+function mealProfileKey(profile) {
   return profile
-    ? `${profile.heightCm}-${profile.weightKg}-${profile.goal}-${dietCategory(profile)}`
+    ? `${profile.heightCm}-${profile.weightKg}-${profile.age}-${profile.sex}-${profile.goal}-${dietCategory(profile)}`
     : null;
 }
 
-function loadCachedPlan() {
+function loadCachedPlan(storageKey) {
   try {
-    const raw = localStorage.getItem(PLAN_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -632,21 +671,21 @@ function todaysPlanDay(plan) {
   return plan.days.find(d => d.day === todayName) ?? plan.days[0];
 }
 
-// Shared across both the Today's Workout and Meal Prep cards - one generated
-// plan drives both, cached in localStorage keyed to the exact profile it was
-// generated for so an unrelated re-render never triggers a fresh (slow, paid)
-// Gemini call, only an actual height/weight/goal change does.
-function useFitnessPlan(profile) {
-  const key = profileKey(profile);
+// One independent plan-fetching hook, parameterized per kind (workout/meal) - each gets
+// its own cache key and its own endpoint, so regenerating one can never touch the other.
+// They used to share a single combined plan/endpoint, which meant clicking "Regenerate"
+// on either card silently regenerated both.
+function usePlan(profile, { storageKey, endpoint, keyFn, buildParams }) {
+  const key = keyFn(profile);
   const [state, setState] = useState(() => {
-    const cached = loadCachedPlan();
+    const cached = loadCachedPlan(storageKey);
     return cached && cached.profileKey === key
       ? { status: 'ready', plan: cached.plan }
       : { status: 'idle', plan: null };
   });
 
   useEffect(() => {
-    const cached = loadCachedPlan();
+    const cached = loadCachedPlan(storageKey);
     setState(
       cached && cached.profileKey === key
         ? { status: 'ready', plan: cached.plan }
@@ -658,16 +697,11 @@ function useFitnessPlan(profile) {
     if (!profile) return;
     setState({ status: 'loading', plan: null });
     try {
-      const params = new URLSearchParams({
-        height: profile.heightCm,
-        weight: profile.weightKg,
-        goal: profile.goal,
-        diet: dietCategory(profile),
-      });
-      const res = await fetch(`http://localhost:8000/plan?${params}`);
+      const params = buildParams(profile);
+      const res = await fetch(`http://localhost:8000${endpoint}?${params}`);
       if (!res.ok) throw new Error('Plan request failed');
       const plan = await res.json();
-      localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify({ profileKey: key, plan }));
+      localStorage.setItem(storageKey, JSON.stringify({ profileKey: key, plan }));
       setState({ status: 'ready', plan });
     } catch {
       setState({ status: 'error', plan: null });
@@ -675,6 +709,28 @@ function useFitnessPlan(profile) {
   };
 
   return { ...state, generate };
+}
+
+function useWorkoutPlan(profile) {
+  return usePlan(profile, {
+    storageKey: WORKOUT_PLAN_STORAGE_KEY,
+    endpoint: '/plan/workout',
+    keyFn: workoutProfileKey,
+    buildParams: (p) => new URLSearchParams({
+      height: p.heightCm, weight: p.weightKg, age: p.age, sex: p.sex, goal: p.goal,
+    }),
+  });
+}
+
+function useMealPlan(profile) {
+  return usePlan(profile, {
+    storageKey: MEAL_PLAN_STORAGE_KEY,
+    endpoint: '/plan/meal',
+    keyFn: mealProfileKey,
+    buildParams: (p) => new URLSearchParams({
+      height: p.heightCm, weight: p.weightKg, age: p.age, sex: p.sex, goal: p.goal, diet: dietCategory(p),
+    }),
+  });
 }
 
 function GeneratePlanButton({ onClick }) {
@@ -803,33 +859,179 @@ function MealPlanContent({ planState }) {
 }
 
 function ChatCard() {
+  const [messages, setMessages] = useState([
+    { role: 'assistant', text: "Hey! Ask me about your form, recovery, past reports, or what to train next." },
+  ]);
+  const [input, setInput] = useState('');
+  const [status, setStatus] = useState('idle'); // 'idle' | 'connecting' | 'sending'
+  const wsRef = useRef(null);
+  const bottomRef = useRef(null);
+  const statusRef = useRef(status);
+  const pendingTimeoutRef = useRef(null);
+
+  useEffect(() => { statusRef.current = status; }, [status]);
+
+  const clearPendingTimeout = () => {
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current);
+      pendingTimeoutRef.current = null;
+    }
+  };
+
+  // One WS connection per Dashboard mount, opened lazily on the first message (not on
+  // page load) - mirrors WorkoutView's "don't connect until needed" rule. It has to stay
+  // open across messages, not reconnect each time: the backend keeps this chat's memory
+  // and tool access tied to the connection itself, so a fresh socket would mean amnesia.
+  useEffect(() => {
+    return () => { clearPendingTimeout(); if (wsRef.current) wsRef.current.close(); };
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, status]);
+
+  const ensureSocket = () => new Promise((resolve, reject) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      resolve(wsRef.current);
+      return;
+    }
+    const socket = new WebSocket('ws://localhost:8000');
+    wsRef.current = socket;
+    socket.onopen = () => resolve(socket);
+    socket.onerror = () => reject(new Error('connect failed'));
+    socket.onclose = () => {
+      wsRef.current = null;
+      // Only surface this if we were mid-request - a close after an idle chat (e.g. the
+      // user navigated away and back) isn't worth interrupting them about.
+      if (statusRef.current !== 'idle') {
+        clearPendingTimeout();
+        setMessages(prev => [...prev, { role: 'assistant', text: 'Connection to the AI Engine was lost - try sending that again.' }]);
+        setStatus('idle');
+      }
+    };
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.action === 'chat_reply') {
+        clearPendingTimeout();
+        setMessages(prev => [...prev, { role: 'assistant', text: data.reply }]);
+        setStatus('idle');
+      } else if (data.action === 'chat_error') {
+        clearPendingTimeout();
+        setMessages(prev => [...prev, { role: 'assistant', text: `Sorry, something went wrong: ${data.message}` }]);
+        setStatus('idle');
+      }
+      // Any other message shape (e.g. a stale backend that doesn't recognize the "chat"
+      // action yet) is ignored here - the timeout below turns that into a visible error
+      // instead of leaving the UI stuck on "Thinking..." forever with no way out.
+    };
+  });
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || status !== 'idle') return;
+
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text }]);
+
+    let profile = null;
+    try {
+      const raw = localStorage.getItem('fitness_profile');
+      profile = raw ? JSON.parse(raw) : null;
+    } catch {
+      profile = null;
+    }
+    // Whatever's already generated and sitting on the dashboard right now - so the coach
+    // can answer "what should I eat today" from the real cached plan instead of only
+    // being able to trigger a fresh (slow, paid) regeneration.
+    let workoutPlan = null;
+    try {
+      const raw = localStorage.getItem('fitness_workout_plan');
+      workoutPlan = raw ? JSON.parse(raw).plan : null;
+    } catch {
+      workoutPlan = null;
+    }
+    let mealPlan = null;
+    try {
+      const raw = localStorage.getItem('fitness_meal_plan');
+      mealPlan = raw ? JSON.parse(raw).plan : null;
+    } catch {
+      mealPlan = null;
+    }
+    const sessionId = localStorage.getItem('fitness_session_id');
+
+    setStatus(wsRef.current?.readyState === WebSocket.OPEN ? 'sending' : 'connecting');
+    try {
+      const socket = await ensureSocket();
+      setStatus('sending');
+      socket.send(JSON.stringify({
+        action: 'chat', message: text, profile, session_id: sessionId,
+        workout_plan: workoutPlan, meal_plan: mealPlan,
+      }));
+      clearPendingTimeout();
+      pendingTimeoutRef.current = setTimeout(() => {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          text: "No response after 45s - the backend may need restarting to pick up the coach chat feature, or it's just slow. Try again?",
+        }]);
+        setStatus('idle');
+      }, 45000);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', text: "Couldn't reach the AI Engine - make sure the backend is running." }]);
+      setStatus('idle');
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
   return (
     <GlassCard className="flex flex-col flex-1 min-h-[16rem]">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">AI Coach Chat</h3>
-        <ComingSoonBadge />
-      </div>
+      <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">AI Coach Chat</h3>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-end gap-3 mb-4">
-        <div className="flex items-end gap-2">
-          <div className="w-7 h-7 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-sm">✦</div>
-          <div className="bg-white/[0.06] border border-white/10 rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-neutral-300 max-w-[85%]">
-            Hey! Once I'm live, ask me about your form, recovery, or what to train next.
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 mb-4">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex items-end gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
+            {m.role === 'assistant' && (
+              <div className="w-7 h-7 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-sm">✦</div>
+            )}
+            <div className={`rounded-2xl px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap ${
+              m.role === 'user'
+                ? 'bg-white text-black rounded-br-md'
+                : 'bg-white/[0.06] border border-white/10 text-neutral-300 rounded-bl-md'
+            }`}>
+              {m.text}
+            </div>
           </div>
-        </div>
+        ))}
+        {status !== 'idle' && (
+          <div className="flex items-end gap-2">
+            <div className="w-7 h-7 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-sm">✦</div>
+            <div className="bg-white/[0.06] border border-white/10 rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-neutral-500 italic">
+              {status === 'connecting' ? 'Connecting...' : 'Thinking...'}
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
         <input
           type="text"
-          disabled
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Ask your AI coach..."
-          className="flex-1 bg-white/[0.03] border border-white/10 rounded-full px-4 py-2.5 text-sm text-neutral-500 placeholder-neutral-600 cursor-not-allowed"
+          className="flex-1 bg-white/[0.03] border border-white/10 rounded-full px-4 py-2.5 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
         />
         <button
-          disabled
+          onClick={sendMessage}
+          disabled={!input.trim() || status !== 'idle'}
           aria-label="Send message"
-          className="w-9 h-9 shrink-0 rounded-full bg-white/10 text-neutral-500 flex items-center justify-center cursor-not-allowed"
+          className="w-9 h-9 shrink-0 rounded-full bg-white text-black flex items-center justify-center disabled:bg-white/10 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors"
         >
           ↑
         </button>
@@ -917,7 +1119,8 @@ function PastReportsCard() {
 
 function Dashboard({ onStartWorkout }) {
   const { profile, updateProfile, clearProfile, recordNewStats, history, deleteHistoryEntry, clearHistory } = useFitnessProfile();
-  const planState = useFitnessPlan(profile);
+  const workoutPlanState = useWorkoutPlan(profile);
+  const mealPlanState = useMealPlan(profile);
   const [profileMode, setProfileMode] = useState(profile ? null : 'edit');
 
   return (
@@ -969,7 +1172,7 @@ function Dashboard({ onStartWorkout }) {
               <GlassCard>
                 <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Today's Workout</h3>
                 {profile ? (
-                  <WorkoutPlanContent planState={planState} />
+                  <WorkoutPlanContent planState={workoutPlanState} />
                 ) : (
                   <p className="text-neutral-500 text-sm">Set up your profile above to see your personalized workout plan.</p>
                 )}
@@ -978,7 +1181,7 @@ function Dashboard({ onStartWorkout }) {
               <GlassCard>
                 <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Meal Prep</h3>
                 {profile ? (
-                  <MealPlanContent planState={planState} />
+                  <MealPlanContent planState={mealPlanState} />
                 ) : (
                   <p className="text-neutral-500 text-sm">Set up your profile above to see your AI-generated meal plan.</p>
                 )}

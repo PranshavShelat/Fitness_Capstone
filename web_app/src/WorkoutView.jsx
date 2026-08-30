@@ -35,7 +35,9 @@ function WorkoutView({ onExit }) {
   const canvasRef = useRef(null);
   const wsRef = useRef(null);
 
-  const [mode, setMode] = useState("SQUAT");
+  // No exercise is selected until the user starts a session and picks one from
+  // the sidebar - the picker itself is disabled until then (see exercises.map below).
+  const [mode, setMode] = useState(null);
   const [feedback, setFeedback] = useState("Loading AI Engine...");
   const [telemetry, setTelemetry] = useState([]);
   const [color, setColor] = useState("rgb(255, 255, 255)");
@@ -116,6 +118,7 @@ function WorkoutView({ onExit }) {
     sessionIdRef.current = newSessionId;
     localStorage.setItem('fitness_session_id', newSessionId);
 
+    setMode(null); // always re-enter the "choose an exercise" state for a fresh session
     setRepCounts({});
     setPlankHoldSeconds(0);
     setElapsedSeconds(0);
@@ -140,6 +143,17 @@ function WorkoutView({ onExit }) {
       setReportError('Not connected to the AI Engine');
       return;
     }
+
+    // Same 'fitness_profile' localStorage key the Dashboard reads/writes - lets the
+    // report include a BMI/goal-aware health summary without prop-drilling it in.
+    let profile = null;
+    try {
+      const raw = localStorage.getItem('fitness_profile');
+      profile = raw ? JSON.parse(raw) : null;
+    } catch {
+      profile = null;
+    }
+
     setReportStatus('generating');
     setReportError('');
     wsRef.current.send(JSON.stringify({
@@ -148,6 +162,7 @@ function WorkoutView({ onExit }) {
       duration_seconds: elapsedSeconds,
       rep_counts: repCounts,
       plank_hold_seconds: plankHoldSeconds,
+      profile,
     }));
   };
 
@@ -174,7 +189,7 @@ function WorkoutView({ onExit }) {
       socket.onopen = () => {
         console.log('Connected to Python Fitness Engine');
         setWsStatus('open');
-        setFeedback("Ready! Select an exercise and step back.");
+        setFeedback("Ready! Start a workout, then choose an exercise.");
       };
 
       socket.onmessage = (event) => {
@@ -270,7 +285,9 @@ function WorkoutView({ onExit }) {
           radius: 4,
         });
 
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        // No point sending frames before an exercise is chosen - the backend has no
+        // analyzer to route a null mode to, and it'd just be wasted bandwidth.
+        if (modeRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({
             mode: modeRef.current,
             landmarks: results.poseLandmarks,
@@ -392,15 +409,19 @@ function WorkoutView({ onExit }) {
 
         <div className="flex-1 p-6 overflow-y-auto">
           <h2 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">Select Exercise</h2>
+          {!sessionActive && (
+            <p className="text-xs text-neutral-500 mb-3 -mt-2">Start a workout to choose an exercise.</p>
+          )}
           <div className="space-y-2">
             {exercises.map(ex => (
               <button
                 key={ex.id}
                 onClick={() => setMode(ex.id)}
-                className={`w-full text-left px-4 py-3 rounded-2xl transition-all duration-200 border ${
+                disabled={!sessionActive}
+                className={`w-full text-left px-4 py-3 rounded-2xl transition-all duration-200 border disabled:opacity-40 disabled:cursor-not-allowed ${
                   mode === ex.id
                     ? 'bg-white border-white text-black font-medium'
-                    : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.07] text-neutral-300'
+                    : 'bg-white/[0.03] border-white/10 hover:enabled:bg-white/[0.07] text-neutral-300'
                 }`}
               >
                 {ex.name}
@@ -480,11 +501,15 @@ function WorkoutView({ onExit }) {
 
       {/* Mobile bottom bar: exercise picker */}
       <div className="flex md:hidden fixed bottom-0 inset-x-0 z-30 bg-black/90 backdrop-blur border-t border-white/10 overflow-x-auto whitespace-nowrap px-3 py-2 gap-2">
+        {!sessionActive && (
+          <span className="inline-flex items-center px-3 text-xs text-neutral-500 shrink-0">Start a workout first</span>
+        )}
         {exercises.map(ex => (
           <button
             key={ex.id}
             onClick={() => setMode(ex.id)}
-            className={`inline-block px-4 py-2 mr-2 rounded-full text-xs font-semibold border ${
+            disabled={!sessionActive}
+            className={`inline-block px-4 py-2 mr-2 rounded-full text-xs font-semibold border disabled:opacity-40 disabled:cursor-not-allowed ${
               mode === ex.id ? 'bg-white border-white text-black' : 'bg-white/5 border-white/10 text-neutral-300'
             }`}
           >
