@@ -351,20 +351,6 @@ def analyze_shoulder_press(landmarks, stage, elbow_forward_reference=None, elbow
                 elbows_back = (elbow_z_rel_shoulder - midpoint) / half_gap > PRESS_SETTINGS["ELBOW_BACK_MARGIN"]
                 break
 
-    # "Goal post" fault: elbows flared up and out to the sides before the press
-    # has actually earned that height (more of a lateral raise than a real
-    # overhead press) - unlike the z-depth checks above, this uses x/y
-    # (shoulder.y - elbow.y), which climbs smoothly and TIGHTLY with elbow-bend
-    # angle in real correct-form data (config.py's PRESS_ELBOW_RISE_REFERENCE,
-    # built straight from golden_dataset/Shoulder press.csv - no per-user
-    # calibration needed, same as BACK_LEAN_MAX and the wrist-vs-elbow check).
-    elbow_above_shoulder = avg_shoulder_y - avg_elbow_y
-    elbows_flared_up = False
-    for lo, hi, ref_mean, ref_stdev in PRESS_ELBOW_RISE_REFERENCE:
-        if lo <= avg_angle < hi and ref_stdev > 0:
-            elbows_flared_up = (elbow_above_shoulder - ref_mean) / ref_stdev > PRESS_SETTINGS["ELBOW_RISE_STDEV_MAX"]
-            break
-
     # wrist.y vs elbow.y IS phase-invariant, though: checked against the same golden
     # dataset, the wrist stays above the elbow (wrist_y - elbow_y is negative) on
     # every single one of 204 frames of a real correct press (mean -0.26, and even
@@ -376,6 +362,26 @@ def analyze_shoulder_press(landmarks, stage, elbow_forward_reference=None, elbow
 
     target_ext = PRESS_SETTINGS["TARGET_EXTENSION"] - PRESS_SETTINGS["BUFFER"]
 
+    # "Goal post" fault: elbows flared up and out to the sides before the press
+    # has actually earned that height (more of a lateral raise than a real
+    # overhead press) - unlike the z-depth checks above, this uses x/y
+    # (shoulder.y - elbow.y), which climbs smoothly and TIGHTLY with elbow-bend
+    # angle in real correct-form data (config.py's PRESS_ELBOW_RISE_REFERENCE,
+    # built straight from golden_dataset/Shoulder press.csv - no per-user
+    # calibration needed, same as BACK_LEAN_MAX and the wrist-vs-elbow check).
+    #
+    # Only applies before the press has reached full extension (avg_angle < target_ext):
+    # once extension IS achieved, "did the elbows rise before earning it" is no longer
+    # a coherent question - real user testing showed this firing at avg_angle ~169 (a
+    # near-complete lockout) and blocking "PERFECT PRESS!" from ever showing, which
+    # contradicts what the check is even meant to catch.
+    elbow_above_shoulder = avg_shoulder_y - avg_elbow_y
+    elbows_flared_up = False
+    if avg_angle < target_ext:
+        for lo, hi, ref_mean, ref_stdev in PRESS_ELBOW_RISE_REFERENCE:
+            if lo <= avg_angle < hi and ref_stdev > 0:
+                elbows_flared_up = (elbow_above_shoulder - ref_mean) / ref_stdev > PRESS_SETTINGS["ELBOW_RISE_STDEV_MAX"]
+                break
 
     target_start = 70
 

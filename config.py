@@ -138,14 +138,25 @@ def extract_elbow_rise_reference(csv_path, bin_size=15):
     camera-comparable coordinate, which is why those got disabled), this uses
     x/y - the same coordinate space BACK_LEAN_MAX and the wrist-vs-elbow
     check already use reliably across different cameras. Checked against
-    golden_dataset/Shoulder press.csv: this climbs smoothly and TIGHTLY
-    (per-15-degree-bucket stdev only 0.005-0.04) from -0.24 (elbow well below
-    shoulder, racked) to +0.22 (elbow above shoulder, locked out) - a real,
-    monotonic constraint of how the arm elevates through a genuine press, not
-    noise. Catches "goal post" form: elbows flared up and out to the sides
-    before the press has actually earned that height (a lateral-raise-style
-    motion instead of a real overhead press).
+    golden_dataset/Shoulder press.csv: this climbs smoothly with elbow-bend
+    angle from -0.24 (elbow well below shoulder, racked) to +0.22 (elbow
+    above shoulder, locked out) - a real, monotonic constraint of how the arm
+    elevates through a genuine press, not noise. Catches "goal post" form:
+    elbows flared up and out to the sides before the press has actually
+    earned that height (a lateral-raise-style motion instead of a real
+    overhead press).
+
+    A rep only passes through the mid-range angles briefly (the "dwelling"
+    phases at rest and lockout are what a single recording captures the most
+    frames of), so those bins end up built from as few as 4-7 frames of one
+    continuous motion - not enough to estimate a real population stdev, and
+    real user testing confirmed it: the 90-105 bin's stdev (0.0016, an order
+    of magnitude tighter than its 0.004-0.04 neighbors) turned an ordinary
+    amount of per-user variation into a false "flaring" flag. STDEV_FLOOR
+    keeps any thin bin from becoming absurdly, unrealistically sensitive.
     """
+    STDEV_FLOOR = 0.02
+
     angles, values = [], []
     try:
         with open(csv_path, 'r') as f:
@@ -172,7 +183,7 @@ def extract_elbow_rise_reference(csv_path, bin_size=15):
         hi = lo + bin_size
         vals = [values[i] for i in range(len(angles)) if lo <= angles[i] < hi]
         if len(vals) >= 2:
-            bins.append((lo, hi, float(np.mean(vals)), float(np.std(vals))))
+            bins.append((lo, hi, float(np.mean(vals)), max(float(np.std(vals)), STDEV_FLOOR)))
     return bins
 
 

@@ -10,7 +10,7 @@ from injury_knowledge import MISHAP_EXPLANATIONS
 from anatomy_diagram import render_fault_diagram
 from plan import bmi_category
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 SECTION_MARKER = "===FAULT_{}==="
 REPORTS_DIR = "reports"
 

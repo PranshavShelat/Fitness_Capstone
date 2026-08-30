@@ -989,7 +989,7 @@ function ChatCard() {
   };
 
   return (
-    <GlassCard className="flex flex-col flex-1 min-h-[16rem]">
+    <GlassCard className="flex flex-col flex-1 min-h-[16rem] overflow-hidden">
       <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">AI Coach Chat</h3>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 mb-4">
@@ -1193,8 +1193,11 @@ function Dashboard({ onStartWorkout }) {
 
           {/* Side column - stretches to match the main column's height (lg:items-stretch
               above), so the chat card can fill the leftover space below Weather and end
-              up flush with the bottom of the main column instead of a fixed/arbitrary size. */}
-          <div className="flex flex-col gap-6 lg:h-full lg:sticky lg:top-10">
+              up flush with the bottom of the main column instead of a fixed/arbitrary size.
+              lg:max-h + overflow-hidden are a hard backstop: a long chat conversation's
+              natural content height can otherwise win out over the stretch-based height,
+              pushing the whole card (and page) taller instead of scrolling internally. */}
+          <div className="flex flex-col gap-6 lg:h-full lg:max-h-[calc(100vh-5rem)] lg:sticky lg:top-10 overflow-hidden">
             <WeatherCard />
             <ChatCard />
           </div>
