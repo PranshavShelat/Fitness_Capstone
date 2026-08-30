@@ -1,0 +1,12 @@
+Exercise: Bicep Curls
+Category: Pull accessory (biceps)
+Type: Isolation, dumbbell
+
+Bicep curls with a supinated (palms-up) grip isolate the biceps directly and are a standard accessory on pull/arm day, layered after the main back-pulling compound movement.
+
+Rep guidance by goal:
+- Cutting: 15-20 reps per set, 3 sets, short rest (30-45s).
+- Maintaining: 10-15 reps per set, 3 sets.
+- Bulking: 8-12 reps per set with heavier dumbbells, 3-4 sets, rest 60s.
+
+Form risk this app watches for: the elbow drifting forward away from the torso during the curl, which shifts load onto the front of the shoulder instead of isolating the arm. Keeping the elbow pinned at the side throughout the rep keeps tension on the biceps.

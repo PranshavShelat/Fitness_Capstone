@@ -1,0 +1,524 @@
+import React, { useEffect, useRef, useState } from 'react';
+import SummaryScreen from './SummaryScreen';
+// MediaPipe is loaded via CDN in index.html to avoid Vite ESM compatibility issues
+const { Pose, POSE_CONNECTIONS } = window;
+const { Camera } = window;
+const { drawConnectors, drawLandmarks } = window;
+
+// mode -> (worked_stage, rest_stage), mirrors server.py's REP_TRANSITIONS.
+// Only used here to know which exercises are rep-based (for the summary screen).
+const REP_BASED_MODES = new Set(["SQUAT", "DIP", "PUSHUP", "PULLUP", "BICEP", "HAMMER", "LATERAL", "PRESS"]);
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function downloadPdfFromBase64(filename, base64) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function WorkoutView({ onExit }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const wsRef = useRef(null);
+
+  // No exercise is selected until the user starts a session and picks one from
+  // the sidebar - the picker itself is disabled until then (see exercises.map below).
+  const [mode, setMode] = useState(null);
+  const [feedback, setFeedback] = useState("Loading AI Engine...");
+  const [telemetry, setTelemetry] = useState([]);
+  const [color, setColor] = useState("rgb(255, 255, 255)");
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+
+  const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'open' | 'reconnecting'
+
+  const [sessionActive, setSessionActive] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [repCounts, setRepCounts] = useState({});
+  const [plankHoldSeconds, setPlankHoldSeconds] = useState(0);
+  const [reportStatus, setReportStatus] = useState('idle'); // 'idle' | 'generating' | 'error'
+  const [reportError, setReportError] = useState('');
+
+  const sessionStartRef = useRef(null);
+  const sessionActiveRef = useRef(false);
+  const modeRef = useRef(mode);
+  const voiceEnabledRef = useRef(isVoiceEnabled);
+  const preferredVoiceRef = useRef(null);
+  // Durable per-workout id (survives a WS reconnect / page reload) - the backend's
+  // mishap log is keyed by this, not by any one TCP connection.
+  const sessionIdRef = useRef(typeof window !== 'undefined' ? localStorage.getItem('fitness_session_id') : null);
+
+  // Exercise definitions
+  const exercises = [
+    { id: "SQUAT", name: "Squats" },
+    { id: "PLANK", name: "Planks" },
+    { id: "DIP", name: "Tricep Dips" },
+    { id: "PUSHUP", name: "Pushups" },
+    { id: "PULLUP", name: "Pullups" },
+    { id: "TWIST", name: "Russian Twists" },
+    { id: "BICEP", name: "Bicep Curls" },
+    { id: "HAMMER", name: "Hammer Curls" },
+    { id: "LATERAL", name: "Lateral Raises" },
+    { id: "PRESS", name: "Shoulder Press" }
+  ];
+
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { voiceEnabledRef.current = isVoiceEnabled; }, [isVoiceEnabled]);
+  useEffect(() => { sessionActiveRef.current = sessionActive; }, [sessionActive]);
+
+  // Voices load asynchronously and vary by OS; pick a natural-sounding one once available
+  // instead of leaving it to whatever default the browser happens to fall back to.
+  useEffect(() => {
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) return;
+      preferredVoiceRef.current =
+        voices.find(v => /Samantha|Ava|Zoe|Google US English/i.test(v.name) && v.lang.startsWith('en')) ||
+        voices.find(v => v.localService && v.lang.startsWith('en')) ||
+        voices.find(v => v.lang.startsWith('en')) ||
+        voices[0];
+    };
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  // Helper for voice feedback (debounce so it doesn't spam)
+  const lastSpokenRef = useRef("");
+  const speakFeedback = (text) => {
+    if (!voiceEnabledRef.current || !text || text === lastSpokenRef.current) return;
+
+    // Cancel whatever's still queued/speaking so voice never lags behind the current feedback
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    if (preferredVoiceRef.current) utterance.voice = preferredVoiceRef.current;
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+    lastSpokenRef.current = text;
+  };
+
+  const startWorkout = () => {
+    const newSessionId = crypto.randomUUID();
+    sessionIdRef.current = newSessionId;
+    localStorage.setItem('fitness_session_id', newSessionId);
+
+    setMode(null); // always re-enter the "choose an exercise" state for a fresh session
+    setRepCounts({});
+    setPlankHoldSeconds(0);
+    setElapsedSeconds(0);
+    setShowSummary(false);
+    setReportStatus('idle');
+    setReportError('');
+    setSessionActive(true);
+  };
+
+  const endWorkout = () => {
+    setSessionActive(false);
+    setShowSummary(true);
+  };
+
+  const dismissSummary = () => {
+    setShowSummary(false);
+  };
+
+  const generateReport = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setReportStatus('error');
+      setReportError('Not connected to the AI Engine');
+      return;
+    }
+
+    // Same 'fitness_profile' localStorage key the Dashboard reads/writes - lets the
+    // report include a BMI/goal-aware health summary without prop-drilling it in.
+    let profile = null;
+    try {
+      const raw = localStorage.getItem('fitness_profile');
+      profile = raw ? JSON.parse(raw) : null;
+    } catch {
+      profile = null;
+    }
+
+    setReportStatus('generating');
+    setReportError('');
+    wsRef.current.send(JSON.stringify({
+      action: 'generate_report',
+      session_id: sessionIdRef.current,
+      duration_seconds: elapsedSeconds,
+      rep_counts: repCounts,
+      plank_hold_seconds: plankHoldSeconds,
+      profile,
+    }));
+  };
+
+  // Workout duration timer
+  useEffect(() => {
+    if (!sessionActive) return;
+    sessionStartRef.current = Date.now();
+    const id = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - sessionStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [sessionActive]);
+
+  // Effect A: WebSocket lifecycle (mount-once, independent of mode/voice/session state)
+  useEffect(() => {
+    let shouldReconnect = true;
+    let socket;
+    let reconnectTimer;
+
+    const connect = () => {
+      socket = new WebSocket('ws://localhost:8000');
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        console.log('Connected to Python Fitness Engine');
+        setWsStatus('open');
+        setFeedback("Ready! Start a workout, then choose an exercise.");
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.action === 'report_ready') {
+          downloadPdfFromBase64(data.filename, data.pdf_base64);
+          setReportStatus('idle');
+          return;
+        }
+        if (data.action === 'report_error') {
+          setReportStatus('error');
+          setReportError(data.message || 'Failed to generate report');
+          return;
+        }
+        if (data.error) return;
+        // Drop stale responses for an exercise the user has already switched away from
+        if (data.mode !== undefined && data.mode !== modeRef.current) return;
+
+        if (data.feedback) {
+          setFeedback(data.feedback);
+          speakFeedback(data.feedback);
+        }
+        if (data.telemetry) setTelemetry(data.telemetry);
+        if (data.color) setColor(data.color);
+
+        if (sessionActiveRef.current) {
+          if (data.repCompleted) {
+            setRepCounts(prev => ({ ...prev, [data.mode]: (prev[data.mode] || 0) + 1 }));
+          }
+          if (data.plankHoldDelta) {
+            setPlankHoldSeconds(prev => prev + data.plankHoldDelta);
+          }
+        }
+      };
+
+      socket.onerror = () => {
+        // onclose fires right after in browsers; let it drive the reconnect
+      };
+
+      socket.onclose = () => {
+        wsRef.current = null;
+        if (shouldReconnect) {
+          setWsStatus('reconnecting');
+          reconnectTimer = setTimeout(connect, 2000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      shouldReconnect = false;
+      clearTimeout(reconnectTimer);
+      if (socket) socket.close();
+    };
+  }, []);
+
+  // Effect B: MediaPipe Pose + Camera setup (mount-once, independent of mode/voice)
+  useEffect(() => {
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+    });
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      smoothSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+
+    pose.onResults((results) => {
+      const videoWidth = videoRef.current.videoWidth;
+      const videoHeight = videoRef.current.videoHeight;
+
+      canvasRef.current.width = videoWidth;
+      canvasRef.current.height = videoHeight;
+
+      const ctx = canvasRef.current.getContext('2d');
+      ctx.save();
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
+      if (results.poseLandmarks) {
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
+          color: '#00FFFF',
+          lineWidth: 4,
+        });
+        drawLandmarks(ctx, results.poseLandmarks, {
+          color: '#FF0000',
+          lineWidth: 2,
+          radius: 4,
+        });
+
+        // No point sending frames before an exercise is chosen - the backend has no
+        // analyzer to route a null mode to, and it'd just be wasted bandwidth.
+        if (modeRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            mode: modeRef.current,
+            landmarks: results.poseLandmarks,
+            session_id: sessionIdRef.current
+          }));
+        }
+      }
+      ctx.restore();
+    });
+
+    let camera;
+    if (videoRef.current) {
+      camera = new Camera(videoRef.current, {
+        onFrame: async () => {
+          await pose.send({ image: videoRef.current });
+        },
+        width: 1280,
+        height: 720,
+      });
+      camera.start();
+    }
+
+    return () => {
+      if (camera) camera.stop();
+      pose.close();
+    };
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-black text-white font-sans flex flex-col md:flex-row">
+
+      {/* Reconnect / connecting overlay */}
+      {wsStatus !== 'open' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+          <div className="bg-white/[0.04] border border-white/10 rounded-[28px] px-8 py-6 flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-white border-t-transparent animate-spin" />
+            <p className="text-neutral-300 font-medium">
+              {wsStatus === 'reconnecting' ? 'Reconnecting to AI Engine...' : 'Connecting to AI Engine...'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Workout summary screen */}
+      {showSummary && (
+        <SummaryScreen
+          repCounts={repCounts}
+          plankHoldSeconds={plankHoldSeconds}
+          elapsedSeconds={elapsedSeconds}
+          exercises={exercises}
+          repBasedModes={REP_BASED_MODES}
+          onDismiss={dismissSummary}
+          onBackToDashboard={onExit}
+          onGenerateReport={generateReport}
+          reportStatus={reportStatus}
+          reportError={reportError}
+        />
+      )}
+
+      {/* Mobile top bar */}
+      <div className="flex md:hidden items-center justify-between px-4 py-2 bg-black/90 backdrop-blur border-b border-white/10 fixed top-0 inset-x-0 z-30">
+        <div className="flex items-center gap-2">
+          {!sessionActive && (
+            <button
+              onClick={onExit}
+              aria-label="Back to dashboard"
+              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm"
+            >
+              ←
+            </button>
+          )}
+          <span className="text-sm font-semibold tracking-tight">
+            AI Fitness
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={sessionActive ? endWorkout : startWorkout}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-white text-black hover:bg-neutral-200'}`}
+          >
+            {sessionActive ? formatDuration(elapsedSeconds) : 'Start'}
+          </button>
+          <button
+            onClick={() => setIsVoiceEnabled(v => !v)}
+            aria-label="Toggle voice coaching"
+            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm"
+          >
+            {isVoiceEnabled ? '🔊' : '🔇'}
+          </button>
+        </div>
+      </div>
+
+      {/* Sidebar: Dashboard (desktop only) */}
+      <div className="hidden md:flex md:flex-col md:w-80 bg-black border-r border-white/10 z-10">
+        <div className="p-6 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            {!sessionActive && (
+              <button
+                onClick={onExit}
+                aria-label="Back to dashboard"
+                className="w-8 h-8 shrink-0 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-sm transition-colors"
+              >
+                ←
+              </button>
+            )}
+            <h1 className="text-2xl font-semibold tracking-tight">
+              AI Fitness Engine
+            </h1>
+          </div>
+          <p className="text-neutral-500 text-sm mt-2">Zero-Latency WebTracker</p>
+
+          <button
+            onClick={sessionActive ? endWorkout : startWorkout}
+            className={`mt-4 w-full py-3 rounded-full font-semibold transition-colors ${sessionActive ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-white text-black hover:bg-neutral-200'}`}
+          >
+            {sessionActive ? `End Workout · ${formatDuration(elapsedSeconds)}` : 'Start Workout'}
+          </button>
+        </div>
+
+        <div className="flex-1 p-6 overflow-y-auto">
+          <h2 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">Select Exercise</h2>
+          {!sessionActive && (
+            <p className="text-xs text-neutral-500 mb-3 -mt-2">Start a workout to choose an exercise.</p>
+          )}
+          <div className="space-y-2">
+            {exercises.map(ex => (
+              <button
+                key={ex.id}
+                onClick={() => setMode(ex.id)}
+                disabled={!sessionActive}
+                className={`w-full text-left px-4 py-3 rounded-2xl transition-all duration-200 border disabled:opacity-40 disabled:cursor-not-allowed ${
+                  mode === ex.id
+                    ? 'bg-white border-white text-black font-medium'
+                    : 'bg-white/[0.03] border-white/10 hover:enabled:bg-white/[0.07] text-neutral-300'
+                }`}
+              >
+                {ex.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-white/10">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-neutral-400">AI Voice Coaching</span>
+              <button
+                onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                className={`w-12 h-6 rounded-full transition-colors ${isVoiceEnabled ? 'bg-white' : 'bg-white/15'} relative`}
+              >
+                <div className={`absolute top-1 w-4 h-4 rounded-full transition-transform ${isVoiceEnabled ? 'left-7 bg-black' : 'left-1 bg-white'}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content: Camera & UI Overlay */}
+      <div className="flex-1 relative bg-black overflow-hidden flex flex-col pt-12 pb-16 md:pt-0 md:pb-0">
+        {/* Video feed (hidden underneath) - mirrored (selfie-view) for display only;
+            the raw, unmirrored frame is still what gets sent to MediaPipe/the backend,
+            so landmark data and L/R labeling are unaffected. */}
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-contain opacity-70 -scale-x-100"
+          playsInline
+          muted
+        />
+
+        {/* Canvas for skeletal lines - mirrored to match the video underneath */}
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full object-contain -scale-x-100"
+        />
+
+        {/* Glassmorphic UI Overlays */}
+        <div className="absolute inset-0 p-6 pointer-events-none flex flex-col justify-between">
+
+          {/* Top Panel: Telemetry */}
+          <div className="flex justify-end">
+            <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[24px] p-4 min-w-[200px]">
+              <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-2">Live Metrics</h3>
+              {telemetry.length > 0 ? (
+                telemetry.map((stat, i) => (
+                  <div key={i} className="text-sm font-mono text-neutral-300 mb-1">
+                    {stat}
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-neutral-600 italic">No telemetry data...</div>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Panel: Dynamic Feedback */}
+          <div className="flex justify-center mb-24 md:mb-10">
+            <div
+              className="px-8 py-4 rounded-full border shadow-2xl transition-all duration-300 backdrop-blur-2xl"
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                borderColor: color,
+                boxShadow: `0 0 20px ${color.replace(')', ', 0.2)').replace('rgb', 'rgba')}`
+              }}
+            >
+              <h2 className="text-3xl font-semibold tracking-tight" style={{ color: color }}>
+                {feedback}
+              </h2>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Mobile bottom bar: exercise picker */}
+      <div className="flex md:hidden fixed bottom-0 inset-x-0 z-30 bg-black/90 backdrop-blur border-t border-white/10 overflow-x-auto whitespace-nowrap px-3 py-2 gap-2">
+        {!sessionActive && (
+          <span className="inline-flex items-center px-3 text-xs text-neutral-500 shrink-0">Start a workout first</span>
+        )}
+        {exercises.map(ex => (
+          <button
+            key={ex.id}
+            onClick={() => setMode(ex.id)}
+            disabled={!sessionActive}
+            className={`inline-block px-4 py-2 mr-2 rounded-full text-xs font-semibold border disabled:opacity-40 disabled:cursor-not-allowed ${
+              mode === ex.id ? 'bg-white border-white text-black' : 'bg-white/5 border-white/10 text-neutral-300'
+            }`}
+          >
+            {ex.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default WorkoutView;
