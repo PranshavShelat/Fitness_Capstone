@@ -11,13 +11,7 @@ from websockets.http11 import Response
 
 load_dotenv()
 
-from engine import (
-    analyze_squat, analyze_plank, analyze_tricep_dip,
-    analyze_pushup, analyze_pullup, analyze_russian_twist,
-    analyze_bicep_curl, analyze_hammer_curl,
-    analyze_lateral_raise, analyze_shoulder_press
-)
-from config import PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
+from engine import EXERCISES, REP_TRANSITIONS, analyze_frame, new_state
 from db import init_db, log_fault
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
@@ -36,17 +30,9 @@ class MockLandmark:
         self.z = z
         self.visibility = visibility
 
-# mode -> (worked_stage, rest_stage); a rep completes on worked_stage -> rest_stage
-REP_TRANSITIONS = {
-    "SQUAT": ("DOWN", "UP"),
-    "DIP": ("DOWN", "UP"),
-    "PUSHUP": ("DOWN", "UP"),
-    "PULLUP": ("UP", "DOWN"),
-    "BICEP": ("UP", "DOWN"),
-    "HAMMER": ("UP", "DOWN"),
-    "LATERAL": ("UP", "DOWN"),
-    "PRESS": ("UP", "DOWN"),
-}
+# REP_TRANSITIONS (mode -> (worked_stage, rest_stage)) is imported from engine,
+# where it is derived from the exercise specs themselves - adding an exercise
+# can no longer leave its rep counting silently unwired.
 
 # Consecutive frames the same fault must be observed before it's logged as a real
 # mishap (~150-250ms at typical webcam framerates) - filters out single-frame
@@ -57,7 +43,9 @@ async def process_frame(websocket):
     # Per-connection state - each call to process_frame is a fresh connection,
     # so this is naturally isolated per client (no cross-client leakage).
     session = {
-        "stage": "UP", "prev_back": 0, "mode": None, "last_plank_ts": None,
+        # One analyzer state per exercise, so switching away and back does not
+        # lose a half-completed rep, and no exercise can inherit another's stage.
+        "states": {}, "mode": None, "last_plank_ts": None,
         "fault_candidate": None, "fault_streak": 0, "fault_logged": False,
         # Both lazily created on the first chat message - "chat_client" must be kept
         # alive here for as long as "chat" is in use (see create_chat_session).
@@ -124,50 +112,28 @@ async def process_frame(websocket):
                 for lm in raw_landmarks
             ]
 
-            # Reset stage/back-angle/plank-timer when switching exercises so
-            # stale state from the previous exercise doesn't bleed into this one.
+            # Reset the plank timer and fault debounce when switching exercises
+            # so stale state from the previous exercise doesn't bleed into this
+            # one. Per-exercise analyzer state lives in session["states"] and is
+            # kept, so returning to an exercise resumes where it left off.
             if session["mode"] is not None and mode != session["mode"]:
-                session["stage"] = "UP"
-                session["prev_back"] = 0
                 session["last_plank_ts"] = None
                 session["fault_candidate"] = None
                 session["fault_streak"] = 0
                 session["fault_logged"] = False
             session["mode"] = mode
 
-            prev_stage = session["stage"]
+            state = session["states"].get(mode) or new_state(mode)
+            prev_stage = state.get("stage") if state else None
 
-            fb, clr, tel = "", (255, 255, 255), []
-
-            # Route to engine.py
-            if mode == "SQUAT":
-                fb, clr, session["stage"], session["prev_back"], tel = analyze_squat(landmarks, session["stage"], session["prev_back"])
-            elif mode == "PLANK":
-                fb, clr, tel = analyze_plank(landmarks)
-            elif mode == "DIP":
-                fb, clr, session["stage"], tel = analyze_tricep_dip(landmarks, session["stage"])
-            elif mode == "PUSHUP":
-                fb, clr, session["stage"], tel = analyze_pushup(landmarks, session["stage"])
-            elif mode == "PULLUP":
-                fb, clr, session["stage"], tel = analyze_pullup(landmarks, session["stage"])
-            elif mode == "TWIST":
-                fb, clr, tel = analyze_russian_twist(landmarks)
-            elif mode == "BICEP":
-                fb, clr, session["stage"], tel = analyze_bicep_curl(landmarks, session["stage"])
-            elif mode == "HAMMER":
-                fb, clr, session["stage"], tel = analyze_hammer_curl(landmarks, session["stage"])
-            elif mode == "LATERAL":
-                fb, clr, session["stage"], tel = analyze_lateral_raise(landmarks, session["stage"])
-            elif mode == "PRESS":
-                fb, clr, session["stage"], tel = analyze_shoulder_press(
-                    landmarks, session["stage"], PRESS_ELBOW_FORWARD_REFERENCE, PRESS_ELBOW_BACK_REFERENCE
-                )
+            fb, clr, state, tel = analyze_frame(mode, landmarks, state)
+            session["states"][mode] = state
 
             # Detect a completed rep via the worked -> rest stage transition
             rep_completed = False
             if mode in REP_TRANSITIONS:
                 worked, rest = REP_TRANSITIONS[mode]
-                if prev_stage == worked and session["stage"] == rest:
+                if prev_stage == worked and state.get("stage") == rest:
                     rep_completed = True
 
             # Track plank hold time as a wall-clock delta since the last PLANK frame
@@ -208,7 +174,7 @@ async def process_frame(websocket):
                 "feedback": fb,
                 "color": css_color,
                 "telemetry": tel,
-                "stage": session["stage"],
+                "stage": state.get("stage") if state else None,
                 "mode": mode,
                 "repCompleted": rep_completed,
                 "plankHoldDelta": round(plank_hold_delta, 3),
@@ -233,6 +199,15 @@ async def handle_http_request(connection, request):
     # falls through (returns None) to the normal WebSocket handshake.
     parsed = urlsplit(request.path)
     path = parsed.path
+
+    if path == "/exercises":
+        # The React app fetches its exercise list from here instead of keeping a
+        # hardcoded copy, so the two can never disagree about which exercises
+        # exist or which of them count reps.
+        return _json_response(200, "OK", {
+            "exercises": EXERCISES,
+            "repBasedModes": sorted(REP_TRANSITIONS.keys()),
+        })
 
     if path == "/reports":
         os.makedirs(REPORTS_DIR, exist_ok=True)

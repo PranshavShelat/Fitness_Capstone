@@ -6,7 +6,7 @@ from google import genai
 
 from rag import retrieve_workout_context, retrieve_meal_context
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 
 # The full golden_dataset exercise catalog, not just the 10 the app can give live camera
 # feedback on - a workout PLAN is a broader recommendation than what the real-time form

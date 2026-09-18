@@ -10,7 +10,7 @@ from plan import bmi_category, generate_workout_plan, generate_meal_plan
 from rag import retrieve
 from report import REPORTS_DIR
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 
 SYSTEM_INSTRUCTION_TEMPLATE = """You are an AI fitness coach embedded in a workout-tracking app. \
 Today's date is {today} ({today_weekday}). Be encouraging, direct, and concise - this is a chat, \
