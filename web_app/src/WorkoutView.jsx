@@ -5,9 +5,33 @@ const { Pose, POSE_CONNECTIONS } = window;
 const { Camera } = window;
 const { drawConnectors, drawLandmarks } = window;
 
-// mode -> (worked_stage, rest_stage), mirrors server.py's REP_TRANSITIONS.
-// Only used here to know which exercises are rep-based (for the summary screen).
-const REP_BASED_MODES = new Set(["SQUAT", "DIP", "PUSHUP", "PULLUP", "BICEP", "HAMMER", "LATERAL", "PRESS"]);
+// The exercise list and which of them count reps are fetched from the backend
+// (GET /exercises), which derives both from the exercise specs themselves - so
+// this UI cannot drift out of sync with what the engine actually supports.
+// These constants are only a fallback for when that fetch fails (server not up
+// yet, offline reload), so the picker is never empty.
+const DEFAULT_EXERCISES = [
+  { id: "SQUAT", name: "Squats" },
+  { id: "PLANK", name: "Planks" },
+  { id: "DIP", name: "Tricep Dips" },
+  { id: "PUSHUP", name: "Pushups" },
+  { id: "PULLUP", name: "Pullups" },
+  { id: "TWIST", name: "Russian Twists" },
+  { id: "BICEP", name: "Bicep Curls" },
+  { id: "HAMMER", name: "Hammer Curls" },
+  { id: "LATERAL", name: "Lateral Raises" },
+  { id: "PRESS", name: "Shoulder Press" },
+  { id: "RDL", name: "Romanian Deadlift" },
+  { id: "HIPTHRUST", name: "Hip Thrust" },
+  { id: "PULLDOWN", name: "Lat Pulldown" },
+  { id: "LEGEXT", name: "Leg Extension" },
+  { id: "LEGRAISE", name: "Leg Raises" },
+];
+
+// Everything except the two hold-based exercises (Planks, Russian Twists).
+const DEFAULT_REP_BASED = DEFAULT_EXERCISES
+  .map(ex => ex.id)
+  .filter(id => id !== "PLANK" && id !== "TWIST");
 
 function formatDuration(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);
@@ -62,19 +86,23 @@ function WorkoutView({ onExit }) {
   // mishap log is keyed by this, not by any one TCP connection.
   const sessionIdRef = useRef(typeof window !== 'undefined' ? localStorage.getItem('fitness_session_id') : null);
 
-  // Exercise definitions
-  const exercises = [
-    { id: "SQUAT", name: "Squats" },
-    { id: "PLANK", name: "Planks" },
-    { id: "DIP", name: "Tricep Dips" },
-    { id: "PUSHUP", name: "Pushups" },
-    { id: "PULLUP", name: "Pullups" },
-    { id: "TWIST", name: "Russian Twists" },
-    { id: "BICEP", name: "Bicep Curls" },
-    { id: "HAMMER", name: "Hammer Curls" },
-    { id: "LATERAL", name: "Lateral Raises" },
-    { id: "PRESS", name: "Shoulder Press" }
-  ];
+  const [exercises, setExercises] = useState(DEFAULT_EXERCISES);
+  const [repBasedModes, setRepBasedModes] = useState(() => new Set(DEFAULT_REP_BASED));
+
+  // Ask the engine what it actually supports. Failure is non-fatal - the
+  // fallback list above stays in place.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('http://localhost:8000/exercises')
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled || !data?.exercises?.length) return;
+        setExercises(data.exercises);
+        setRepBasedModes(new Set(data.repBasedModes || []));
+      })
+      .catch(() => { /* server not up yet; fallback list is fine */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { voiceEnabledRef.current = isVoiceEnabled; }, [isVoiceEnabled]);
@@ -338,7 +366,7 @@ function WorkoutView({ onExit }) {
           plankHoldSeconds={plankHoldSeconds}
           elapsedSeconds={elapsedSeconds}
           exercises={exercises}
-          repBasedModes={REP_BASED_MODES}
+          repBasedModes={repBasedModes}
           onDismiss={dismissSummary}
           onBackToDashboard={onExit}
           onGenerateReport={generateReport}

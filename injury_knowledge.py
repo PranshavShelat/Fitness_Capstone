@@ -170,4 +170,53 @@ MISHAP_EXPLANATIONS = {
         "image": "shoulder.png",
         "region": (0.35, 0.15, 0.78, 0.68),
     },
+    "TOO LOW (LOWER BACK ROUNDING)": {
+        "label": "Lumbar Flexion Under Load",
+        "explanation": (
+            "The hips hinged further than the hamstrings could hold, so the pelvis "
+            "tucked under and the lower spine rounded while still supporting the load. "
+            "A Romanian deadlift is meant to stop at the end of the hamstring stretch; "
+            "going past it transfers the load from the hamstrings to the lumbar discs "
+            "and ligaments, which is the mechanism behind most hinge-related back injuries."
+        ),
+        "image": "spine.png",
+        "region": (0.12, 0.60, 0.88, 0.83),
+    },
+    "STAND TALL - DON'T LEAN AT LOCKOUT": {
+        "label": "Lockout Lean",
+        "explanation": (
+            "At the top of the hinge the torso was still tilted rather than finishing "
+            "vertical. Leaning back to 'prove' lockout compresses the facet joints of "
+            "the lower spine at exactly the moment the load is heaviest; finishing "
+            "still leaning forward leaves the lower back holding the weight instead of "
+            "the glutes. Either way the finish position is standing tall with the "
+            "glutes squeezed and the ribs down."
+        ),
+        "image": "spine.png",
+        "region": (0.12, 0.60, 0.88, 0.83),
+    },
+    "STOP LEANING BACK (LOWER BACK STRAIN)": {
+        "label": "Excessive Torso Lean",
+        "explanation": (
+            "The torso leaned progressively backwards through the pulldown, turning the "
+            "movement into a row driven by the lower back and bodyweight rather than the "
+            "lats. Beyond a slight lean this loads the lumbar spine in an unsupported "
+            "seated position and takes tension off the muscle the exercise is meant to "
+            "train."
+        ),
+        "image": "spine.png",
+        "region": (0.12, 0.60, 0.88, 0.83),
+    },
+    "DON'T SNAP INTO LOCKOUT": {
+        "label": "Terminal Knee Extension Snap",
+        "explanation": (
+            "The knee was driven hard into full lockout at the top of the extension. "
+            "The last few degrees of knee extension is where compression between the "
+            "kneecap and the femur peaks, and snapping into it under machine load - "
+            "rather than stopping just short and holding the contraction - is associated "
+            "with patellofemoral pain and, over time, cartilage wear."
+        ),
+        "image": "knee.png",
+        "region": (0.12, 0.36, 0.88, 0.76),
+    },
 }

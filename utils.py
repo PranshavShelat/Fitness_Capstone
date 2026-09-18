@@ -1,48 +1,57 @@
-import numpy as np
-from gtts import gTTS
-from playsound import playsound
-import time
+"""Voice feedback for the desktop (OpenCV) app.
+
+calculate_angle now lives in pose_math.py alongside the rest of the pose
+geometry and is re-exported here so existing imports keep working. The gTTS and
+playsound imports are deliberately INSIDE the playback function: server.py and
+the test suite import this module's maths but have no use for audio, and a
+missing audio backend should not stop the form engine from running.
+"""
 import os
 import threading
+import time
 
-# --- MATH HELPERS ---
-def calculate_angle(a, b, c):
-    a = np.array(a) 
-    b = np.array(b) 
-    c = np.array(c) 
-    
-    radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
-    angle = np.abs(radians * 180.0 / np.pi)
-    
-    if angle > 180.0:
-        angle = 360 - angle
-        
-    return angle
+from pose_math import calculate_angle  # noqa: F401  (re-exported for compatibility)
 
-# --- VOICE HELPERS ---
-last_time = 0
+_last_spoken_at = 0.0
+SPEAK_COOLDOWN_SECONDS = 5
+
+# Set once if the audio backend turns out to be unavailable, so a missing gTTS
+# or playsound install fails quietly the first time instead of printing a thread
+# traceback every few seconds for the whole workout.
+_audio_disabled = False
+
 
 def _play_audio_in_background(text):
-    os.makedirs("voice_files", exist_ok=True)
-    filename = f"voice_files/voice_{int(time.time() * 1000)}.mp3" 
+    global _audio_disabled
+    filename = None
     try:
-        tts = gTTS(text=text, lang='en')
-        tts.save(filename)
+        from gtts import gTTS
+        from playsound import playsound
+
+        os.makedirs("voice_files", exist_ok=True)
+        filename = f"voice_files/voice_{int(time.time() * 1000)}.mp3"
+        gTTS(text=text, lang="en").save(filename)
         playsound(filename)
-        if os.path.exists(filename):
-            os.remove(filename)
+    except ImportError:
+        _audio_disabled = True
+        print("Voice coaching is off: install gTTS and playsound to enable it.")
     except Exception:
+        # A single failed clip (no network for gTTS, busy audio device) should
+        # never interrupt the workout - drop it and carry on.
         pass
+    finally:
+        if filename and os.path.exists(filename):
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
+
 
 def speak(text):
-    global last_time
-    if not text:
+    global _last_spoken_at
+    if not text or _audio_disabled:
         return
-
-    # INCREASED COOLDOWN TO 5 SECONDS
-    if time.time() - last_time >= 5:
-        last_time = time.time() 
-        
-        audio_thread = threading.Thread(target=_play_audio_in_background, args=(text,))
-        audio_thread.daemon = True 
-        audio_thread.start()
+    if time.time() - _last_spoken_at < SPEAK_COOLDOWN_SECONDS:
+        return
+    _last_spoken_at = time.time()
+    threading.Thread(target=_play_audio_in_background, args=(text,), daemon=True).start()
