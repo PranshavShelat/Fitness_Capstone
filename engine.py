@@ -55,6 +55,7 @@ def press_elbow_forward_signal(landmarks):
     Kept for record_press_sample.py, the offline calibration recorder. See the
     notes in config.py for why the checks built on this signal ship disabled.
     """
+
     L = Landmarks(landmarks, "r")
     r = calculate_angle(L.p("r_shoulder"), L.p("r_elbow"), L.p("r_wrist"))
     l = calculate_angle(L.p("l_shoulder"), L.p("l_elbow"), L.p("l_wrist"))
