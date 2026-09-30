@@ -125,20 +125,22 @@ function WorkoutView({ onExit }) {
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  // Helper for voice feedback (debounce so it doesn't spam)
-  const lastSpokenRef = useRef("");
-  const speakFeedback = (text) => {
-    if (!voiceEnabledRef.current || !text || text === lastSpokenRef.current) return;
+  // Speaks a cue chosen by the server's VoiceCoach (voice_coach.py). The server
+  // already decides WHEN to talk (one cue per 5 s window, or at once for an
+  // injury), so there is no per-frame debouncing here any more.
+  const speakCue = (cue) => {
+    if (!voiceEnabledRef.current || !cue?.text) return;
+    const text = cue.text;
 
-    // Cancel whatever's still queued/speaking so voice never lags behind the current feedback
-    window.speechSynthesis.cancel();
+    // Cues are >= 2.5 s apart, so normally nothing is still speaking. If it is,
+    // an urgent (injury) cue interrupts; anything else waits its turn.
+    if (cue.urgent) window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
     if (preferredVoiceRef.current) utterance.voice = preferredVoiceRef.current;
     utterance.rate = 1.05;
     utterance.pitch = 1.0;
     window.speechSynthesis.speak(utterance);
-    lastSpokenRef.current = text;
   };
 
   const startWorkout = () => {
@@ -237,10 +239,10 @@ function WorkoutView({ onExit }) {
         // Drop stale responses for an exercise the user has already switched away from
         if (data.mode !== undefined && data.mode !== modeRef.current) return;
 
-        if (data.feedback) {
-          setFeedback(data.feedback);
-          speakFeedback(data.feedback);
-        }
+        // On-screen text stays live per frame; the VOICE only speaks the
+        // coach's windowed cue.
+        if (data.feedback) setFeedback(data.feedback);
+        if (data.voiceCue && sessionActiveRef.current) speakCue(data.voiceCue);
         if (data.telemetry) setTelemetry(data.telemetry);
         if (data.color) setColor(data.color);
 
@@ -492,8 +494,28 @@ function WorkoutView({ onExit }) {
         {/* Glassmorphic UI Overlays */}
         <div className="absolute inset-0 p-6 pointer-events-none flex flex-col justify-between">
 
-          {/* Top Panel: Telemetry */}
-          <div className="flex justify-end">
+          {/* Top Panel: live rep counter (left) + telemetry (right) */}
+          <div className="flex justify-between items-start gap-4">
+            {sessionActive && mode ? (
+              <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[24px] px-5 py-4 min-w-[140px]">
+                <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">
+                  {exercises.find(ex => ex.id === mode)?.name ?? mode}
+                </h3>
+                {mode === 'PLANK' ? (
+                  <p className="mt-1">
+                    <span className="text-5xl font-semibold tabular-nums">{Math.round(plankHoldSeconds)}</span>
+                    <span className="text-sm text-neutral-400 ml-1.5">sec held</span>
+                  </p>
+                ) : repBasedModes.has(mode) ? (
+                  <p className="mt-1">
+                    <span className="text-5xl font-semibold tabular-nums">{repCounts[mode] || 0}</span>
+                    <span className="text-sm text-neutral-400 ml-1.5">{(repCounts[mode] || 0) === 1 ? 'rep' : 'reps'}</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-neutral-400 mt-1">Hold the position</p>
+                )}
+              </div>
+            ) : <div />}
             <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[24px] p-4 min-w-[200px]">
               <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-2">Live Metrics</h3>
               {telemetry.length > 0 ? (
@@ -503,7 +525,9 @@ function WorkoutView({ onExit }) {
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-neutral-600 italic">No telemetry data...</div>
+                <div className="text-sm text-neutral-500">
+                  {sessionActive ? 'Pick an exercise to see live metrics' : 'Start a workout to see live metrics'}
+                </div>
               )}
             </div>
           </div>

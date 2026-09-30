@@ -7,7 +7,10 @@ function formatDuration(totalSeconds) {
 }
 
 function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises, repBasedModes, onDismiss, onBackToDashboard, onGenerateReport, reportStatus, reportError }) {
-  const repExercises = exercises.filter(ex => repBasedModes.has(ex.id));
+  // Only the exercises actually done this session - listing every exercise with
+  // "0 reps" buried the ones that mattered.
+  const repExercises = exercises.filter(ex => repBasedModes.has(ex.id) && (repCounts[ex.id] || 0) > 0);
+  const plankDone = Math.round(plankHoldSeconds) > 0;
   const totalReps = Object.values(repCounts).reduce((sum, n) => sum + n, 0);
 
   return (
@@ -22,13 +25,18 @@ function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises,
           {repExercises.map(ex => (
             <div key={ex.id} className="flex items-center justify-between text-sm">
               <span className="text-neutral-400">{ex.name}</span>
-              <span className="font-mono text-neutral-200">{repCounts[ex.id] || 0} reps</span>
+              <span className="font-mono text-neutral-200">{repCounts[ex.id]} {repCounts[ex.id] === 1 ? 'rep' : 'reps'}</span>
             </div>
           ))}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-neutral-400">Plank Hold</span>
-            <span className="font-mono text-neutral-200">{Math.round(plankHoldSeconds)}s</span>
-          </div>
+          {plankDone && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-neutral-400">Plank Hold</span>
+              <span className="font-mono text-neutral-200">{Math.round(plankHoldSeconds)}s</span>
+            </div>
+          )}
+          {repExercises.length === 0 && !plankDone && (
+            <p className="text-sm text-neutral-500">No reps were tracked in this workout.</p>
+          )}
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t border-white/10 mb-6">

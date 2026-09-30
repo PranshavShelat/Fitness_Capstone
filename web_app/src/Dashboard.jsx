@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-
+import { createPortal } from 'react-dom';
 const WEATHER_CODES = {
   0: { emoji: '☀️', label: 'Clear Sky' },
   1: { emoji: '🌤️', label: 'Mainly Clear' },
@@ -542,6 +542,15 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
   );
 }
 
+const BMI_CATEGORY_COLORS = {
+  Underweight: 'text-amber-300',
+  Normal: 'text-emerald-400',
+  Overweight: 'text-amber-300',
+  Obese: 'text-red-400',
+};
+const PROFILE_ACTION_CLASS =
+  'text-xs font-medium text-neutral-400 border border-white/10 rounded-full px-3 py-1.5 hover:text-white hover:border-white/30 transition-colors';
+
 function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, history, onDeleteHistoryEntry, onClearHistory }) {
   const [showTimeline, setShowTimeline] = useState(false);
   const [confirmingClearProfile, setConfirmingClearProfile] = useState(false);
@@ -552,44 +561,43 @@ function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, h
 
   return (
     <div>
-      <div className="flex items-center justify-between bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3">
-        <div>
-          <p className="text-lg font-semibold tracking-tight">
-            BMI {bmi.toFixed(1)} <span className="text-neutral-500 text-sm font-normal">&middot; {bmiCategory(bmi)}</span>
-          </p>
-          <p className="text-sm text-neutral-400">{profile.age} yrs &middot; {sexLabel} &middot; Goal: {goalLabel} &middot; {dietLabel(profile)}</p>
-        </div>
+      {/* Stats as tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {[
+          { label: 'BMI', value: bmi.toFixed(1), sub: bmiCategory(bmi), subClass: BMI_CATEGORY_COLORS[bmiCategory(bmi)] },
+          { label: 'Height', value: profile.heightCm, sub: 'cm' },
+          { label: 'Weight', value: profile.weightKg, sub: 'kg' },
+          { label: 'Goal', value: goalLabel, sub: `${profile.age} yrs \u00b7 ${sexLabel}` },
+          { label: 'Diet', value: dietLabel(profile).split(' (')[0], sub: (dietLabel(profile).match(/\((.*)\)/) || [])[1] || '' },
+        ].map(tile => (
+          <div key={tile.label} className="bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-500">{tile.label}</p>
+            <p className="text-lg font-semibold tracking-tight text-white mt-0.5 truncate">{tile.value}</p>
+            <p className={`text-xs truncate ${tile.subClass || 'text-neutral-500'}`}>{tile.sub || '\u00a0'}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2 mt-3">
         {confirmingClearProfile ? (
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs text-neutral-500">Clear your profile?</span>
-            <button
-              onClick={() => setConfirmingClearProfile(false)}
-              className="text-xs text-neutral-500 hover:text-white transition-colors"
-            >
-              Cancel
-            </button>
+          <>
+            <span className="text-xs text-neutral-500 mr-1">Clear your profile?</span>
+            <button onClick={() => setConfirmingClearProfile(false)} className={PROFILE_ACTION_CLASS}>Cancel</button>
             <button
               onClick={() => { onClearProfile(); setConfirmingClearProfile(false); }}
-              className="text-xs text-red-400 hover:text-red-300 transition-colors"
+              className="text-xs font-medium text-red-300 border border-red-400/30 rounded-full px-3 py-1.5 hover:bg-red-500/10 transition-colors"
             >
               Confirm Clear
             </button>
-          </div>
+          </>
         ) : (
-          <div className="flex items-center gap-3 shrink-0">
-            <button onClick={() => setShowTimeline(true)} className="text-xs text-neutral-500 hover:text-white transition-colors">
-              View Timeline
-            </button>
-            <button onClick={onRecordNew} className="text-xs text-neutral-500 hover:text-white transition-colors">
-              Record New Stats
-            </button>
-            <button onClick={onEdit} className="text-xs text-neutral-500 hover:text-white transition-colors">
-              Edit
-            </button>
-            <button onClick={() => setConfirmingClearProfile(true)} className="text-xs text-neutral-500 hover:text-white transition-colors">
-              Clear
-            </button>
-          </div>
+          <>
+            <button onClick={() => setShowTimeline(true)} className={PROFILE_ACTION_CLASS}>View Timeline</button>
+            <button onClick={onRecordNew} className={PROFILE_ACTION_CLASS}>Record New Stats</button>
+            <button onClick={onEdit} className={PROFILE_ACTION_CLASS}>Edit</button>
+            <button onClick={() => setConfirmingClearProfile(true)} className={PROFILE_ACTION_CLASS}>Clear</button>
+          </>
         )}
       </div>
 
@@ -708,7 +716,15 @@ function usePlan(profile, { storageKey, endpoint, keyFn, buildParams }) {
     }
   };
 
-  return { ...state, generate };
+  // A plan made by the coach chat replaces the card's plan exactly like the
+  // Generate button would - saved, so it survives a page refresh.
+  const replaceWith = (plan) => {
+    if (!plan || !Array.isArray(plan.days)) return;
+    localStorage.setItem(storageKey, JSON.stringify({ profileKey: key, plan }));
+    setState({ status: 'ready', plan });
+  };
+
+  return { ...state, generate, replaceWith };
 }
 
 function useWorkoutPlan(profile) {
@@ -755,117 +771,318 @@ function SourcesFooter({ sources }) {
     </div>
   );
 }
+// Pop-up shared by the Today's Workout and Meal Prep cards.
+// renderDay(day) draws one day's content, so the same pop-up works for both.
+// Pop-up shared by the Today's Workout and Meal Prep cards.
+// Rendered with createPortal straight into <body>: the dashboard cards use a blur
+// effect, and a blurred parent traps `position: fixed` inside itself - which is
+// why the pop-up was stuck inside its card instead of covering the screen.
+function PlanModal({ title, plan, renderDay, header, onClose }) {
+  const today = todaysPlanDay(plan);
+  const [view, setView] = useState('today'); // 'today' | 'week'
+  const days = view === 'today' ? [today] : plan.days;
 
-function WorkoutPlanContent({ planState }) {
-  const [expanded, setExpanded] = useState(false);
+  // Close on Escape, and stop the page behind from scrolling while open
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
 
-  if (planState.status === 'idle') return <GeneratePlanButton onClick={planState.generate} />;
-  if (planState.status === 'loading') {
-    return <p className="text-neutral-500 text-sm italic">Building your personalized plan with AI - this can take up to 30s...</p>;
-  }
-  if (planState.status === 'error') {
+  const tabClass = active =>
+    `px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
+      active ? 'bg-white text-black' : 'text-neutral-400 hover:text-white'
+    }`;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-xl p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl h-[90vh] bg-neutral-950/95 border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Title + close button */}
+        <div className="flex items-center justify-between mb-5 shrink-0">
+          <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-10 h-10 rounded-full bg-white/[0.06] hover:bg-white/15 text-neutral-300 hover:text-white text-xl leading-none transition-colors"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Today / Full week switch + optional header (e.g. calorie target) */}
+        <div className="flex flex-wrap items-center gap-4 mb-5 shrink-0">
+          <div className="flex gap-1 bg-white/[0.05] border border-white/10 rounded-full p-1">
+            <button className={tabClass(view === 'today')} onClick={() => setView('today')}>Today</button>
+            <button className={tabClass(view === 'week')} onClick={() => setView('week')}>Full week</button>
+          </div>
+          {header}
+        </div>
+
+        {/* Scrollable days: one column for today, a 2-column grid for the week */}
+        <div
+          className={`overflow-y-auto flex-1 min-h-0 pr-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent] ${
+            view === 'week' ? 'grid grid-cols-1 md:grid-cols-2 gap-3 content-start' : 'space-y-3'
+          }`}
+        >
+          {days.map(day => (
+            <div
+              key={day.day}
+              className={`border rounded-2xl px-5 py-4 ${
+                day.day === today.day ? 'bg-white/[0.08] border-white/20' : 'bg-white/[0.03] border-white/5'
+              }`}
+            >
+              <p className="text-base font-semibold mb-2">
+                {day.day}{day.day === today.day ? ' (Today)' : ''}
+              </p>
+              {renderDay(day)}
+            </div>
+          ))}
+        </div>
+
+        <div className="shrink-0">
+          <SourcesFooter sources={plan.sources} />
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+// One day of the workout plan. compact = the short dashboard-card version.
+function WorkoutDay({ day, compact = false }) {
+  if (day.workout.is_rest) {
     return (
-      <div className="space-y-2">
-        <p className="text-neutral-500 text-sm">Couldn't generate a plan - is the AI Engine running?</p>
-        <button onClick={planState.generate} className="text-xs text-white underline">Try again</button>
+      <div>
+        <span className="inline-block text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+          Rest day
+        </span>
+        {!compact && day.notes && (
+          <p className="text-xs text-neutral-400 mt-3 pl-3 border-l-2 border-white/15">{day.notes}</p>
+        )}
       </div>
     );
   }
 
-  const today = todaysPlanDay(planState.plan);
-  const daysToShow = expanded ? planState.plan.days : [today];
+  const exercises = day.workout.exercises;
+  const shown = compact ? exercises.slice(0, 4) : exercises;
+  return (
+    <div>
+      <ul className="divide-y divide-white/5">
+        {shown.map((ex, i) => (
+          <li key={i} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="w-5 h-5 shrink-0 rounded-full bg-white/10 text-[10px] font-semibold text-neutral-300 flex items-center justify-center">
+                {i + 1}
+              </span>
+              <span className="text-sm text-neutral-200 truncate">{ex.name}</span>
+            </span>
+            <span className="shrink-0 text-xs font-semibold tabular-nums text-white bg-white/10 rounded-full px-2.5 py-1">
+              {ex.sets_reps.replace('x', ' \u00d7 ')}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {compact && exercises.length > shown.length && (
+        <p className="text-xs text-neutral-500 mt-2">+{exercises.length - shown.length} more</p>
+      )}
+      {!compact && day.notes && (
+        <p className="text-xs text-neutral-400 mt-3 pl-3 border-l-2 border-white/15">{day.notes}</p>
+      )}
+    </div>
+  );
+}
 
+const MEALS = [
+  { key: 'breakfast', label: 'Breakfast' },
+  { key: 'lunch', label: 'Lunch' },
+  { key: 'dinner', label: 'Dinner' },
+  { key: 'snack', label: 'Snack' },
+];
+
+// "80g oats in 250ml milk, 32g peanut butter, and 1 banana" -> one ingredient per
+// item. Splits on commas and on "and" before a quantity ("and 15g chia seeds"),
+// but never on a comma inside brackets like "(3 large eggs, 1 yolk)".
+function splitIngredients(text) {
+  const parts = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of String(text || '')) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts
+    .flatMap(part => part.split(/\s+and\s+(?=\d)/))
+    .map(part => part.trim().replace(/^and\s+/i, '').replace(/\.$/, ''))
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1));
+}
+
+// One day of the meal plan. compact = one line per meal on the dashboard card;
+// the pop-up lists every ingredient on its own line.
+function MealDay({ day, compact = false }) {
+  return (
+    <ul className="divide-y divide-white/5">
+      {MEALS.map(meal => (
+        <li key={meal.key} className="py-2 first:pt-0 last:pb-0">
+          <p className="text-sm font-semibold text-white">{meal.label}</p>
+          {compact ? (
+            <p className="text-sm text-neutral-400 leading-snug mt-0.5 line-clamp-1">{day.meals[meal.key]}</p>
+          ) : (
+            <ul className="mt-1 space-y-0.5">
+              {splitIngredients(day.meals[meal.key]).map((item, i) => (
+                <li key={i} className="flex gap-2 text-sm text-neutral-300 leading-snug">
+                  <span className="mt-[0.55em] w-1 h-1 shrink-0 rounded-full bg-neutral-500" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Shown while a plan is missing, loading or failed - same for both cards.
+function PlanStatus({ planState }) {
+  if (planState.status === 'idle') return <GeneratePlanButton onClick={planState.generate} />;
+  if (planState.status === 'loading') {
+    return <p className="text-neutral-500 text-sm italic">Building your personalized plan with AI - this can take up to 30s...</p>;
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-neutral-500 text-sm">Couldn't generate a plan - is the AI Engine running?</p>
+      <button onClick={planState.generate} className="text-xs text-white underline">Try again</button>
+    </div>
+  );
+}
+
+// Today's plan as a clickable box that opens the pop-up.
+function TodayPreview({ day, onOpen, children }) {
+  return (
+    <button
+      onClick={onOpen}
+      className="w-full text-left bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 hover:bg-white/[0.07] hover:border-white/15 transition-colors"
+    >
+      <p className="text-sm font-semibold mb-1.5">{day.day} (Today)</p>
+      {children}
+      <p className="text-xs text-neutral-500 mt-2">Click to view today or the full week &rarr;</p>
+    </button>
+  );
+}
+
+function WorkoutPlanContent({ planState }) {
+  const [open, setOpen] = useState(false);
+  if (planState.status !== 'ready') return <PlanStatus planState={planState} />;
+
+  const today = todaysPlanDay(planState.plan);
   return (
     <div className="space-y-3">
-      <div className="space-y-2 max-h-64 overflow-y-auto pr-1 -mr-1">
-        {daysToShow.map(day => (
-          <div key={day.day} className="bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3">
-            <p className="text-sm font-semibold mb-1.5">
-              {day.day}{!expanded && day.day === today.day ? ' (Today)' : ''}
-            </p>
-            {day.workout.is_rest ? (
-              <p className="text-sm text-neutral-400">Rest day</p>
-            ) : (
-              <ul className="text-sm text-neutral-300 space-y-0.5">
-                {day.workout.exercises.map((ex, i) => (
-                  <li key={i}>{ex.name} &mdash; {ex.sets_reps}</li>
-                ))}
-              </ul>
-            )}
-            {day.notes && <p className="text-xs text-neutral-500 mt-1.5 italic">{day.notes}</p>}
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center justify-between">
-        <button onClick={() => setExpanded(e => !e)} className="text-xs text-neutral-500 hover:text-white transition-colors">
-          {expanded ? 'Show today only' : 'View full week'}
-        </button>
+      <TodayPreview day={today} onOpen={() => setOpen(true)}>
+        <WorkoutDay day={today} compact />
+      </TodayPreview>
+      <div className="flex justify-end">
         <button onClick={planState.generate} className="text-xs text-neutral-500 hover:text-white transition-colors">
           ↻ Regenerate
         </button>
       </div>
-      <SourcesFooter sources={planState.plan.sources} />
+      {open && (
+        <PlanModal
+          title="Workout Plan"
+          plan={planState.plan}
+          renderDay={day => <WorkoutDay day={day} />}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 function MealPlanContent({ planState }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  if (planState.status !== 'ready') return <PlanStatus planState={planState} />;
 
-  if (planState.status === 'idle') return <GeneratePlanButton onClick={planState.generate} />;
-  if (planState.status === 'loading') {
-    return <p className="text-neutral-500 text-sm italic">Building your personalized plan with AI - this can take up to 30s...</p>;
-  }
-  if (planState.status === 'error') {
-    return (
-      <div className="space-y-2">
-        <p className="text-neutral-500 text-sm">Couldn't generate a plan - is the AI Engine running?</p>
-        <button onClick={planState.generate} className="text-xs text-white underline">Try again</button>
-      </div>
-    );
-  }
-
-  const today = todaysPlanDay(planState.plan);
-  const daysToShow = expanded ? planState.plan.days : [today];
-
+  const plan = planState.plan;
+  const today = todaysPlanDay(plan);
+  const target = plan.dailyCalories != null && (
+    <p className="text-xs text-neutral-500">
+      Daily target: ~{plan.dailyCalories} kcal &middot; ~{plan.dailyProteinG}g protein
+    </p>
+  );
   return (
     <div className="space-y-3">
-      {planState.plan.dailyCalories != null && (
-        <p className="text-xs text-neutral-500">
-          Daily target: ~{planState.plan.dailyCalories} kcal &middot; ~{planState.plan.dailyProteinG}g protein
-        </p>
+      {target}
+      <TodayPreview day={today} onOpen={() => setOpen(true)}>
+        <MealDay day={today} compact />
+      </TodayPreview>
+      {open && (
+        <PlanModal
+          title="Meal Plan"
+          plan={plan}
+          header={target}
+          renderDay={day => <MealDay day={day} />}
+          onClose={() => setOpen(false)}
+        />
       )}
-      <div className="space-y-2 max-h-64 overflow-y-auto pr-1 -mr-1">
-        {daysToShow.map(day => (
-          <div key={day.day} className="bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3">
-            <p className="text-sm font-semibold mb-1.5">
-              {day.day}{!expanded && day.day === today.day ? ' (Today)' : ''}
-            </p>
-            <ul className="text-sm text-neutral-300 space-y-1">
-              <li><span className="text-neutral-500">Breakfast:</span> {day.meals.breakfast}</li>
-              <li><span className="text-neutral-500">Lunch:</span> {day.meals.lunch}</li>
-              <li><span className="text-neutral-500">Dinner:</span> {day.meals.dinner}</li>
-              <li><span className="text-neutral-500">Snack:</span> {day.meals.snack}</li>
-            </ul>
-          </div>
-        ))}
-      </div>
-      <button onClick={() => setExpanded(e => !e)} className="text-xs text-neutral-500 hover:text-white transition-colors">
-        {expanded ? 'Show today only' : 'View full week'}
-      </button>
-      <SourcesFooter sources={planState.plan.sources} />
     </div>
   );
 }
 
-function ChatCard() {
+// Gemini's chat replies use a little Markdown (**bold** and "* " bullet points).
+// Show them properly instead of as raw symbols - no extra library needed.
+function FormattedText({ text }) {
+  return text.split('\n').map((line, i) => {
+    const isBullet = /^\s*[*-]\s+/.test(line);
+    const content = isBullet ? line.replace(/^\s*[*-]\s+/, '') : line;
+    const parts = content.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+      part.startsWith('**') && part.endsWith('**') && part.length > 4
+        ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+        : part
+    );
+    return (
+      <div key={i} className={isBullet ? 'pl-4 -indent-3' : ''}>
+        {isBullet && '\u2022 '}{parts}{line === '' && '\u00A0'}
+      </div>
+    );
+  });
+}
+
+// One-tap starter questions, shown until the user sends their first message.
+const CHAT_SUGGESTIONS = [
+  'What am I training today?',
+  'What should I eat today?',
+  'Summarise my last report',
+];
+
+function ChatCard({ onWorkoutPlan, onMealPlan }) {
+  // Kept in a ref: the socket's onmessage handler is created once, so it must read
+  // the latest callbacks rather than the ones from the first render.
+  const planCallbacksRef = useRef({ onWorkoutPlan, onMealPlan });
+  planCallbacksRef.current = { onWorkoutPlan, onMealPlan };
   const [messages, setMessages] = useState([
     { role: 'assistant', text: "Hey! Ask me about your form, recovery, past reports, or what to train next." },
   ]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState('idle'); // 'idle' | 'connecting' | 'sending'
   const wsRef = useRef(null);
-  const bottomRef = useRef(null);
+  const listRef = useRef(null);
   const statusRef = useRef(status);
   const pendingTimeoutRef = useRef(null);
 
@@ -887,7 +1104,9 @@ function ChatCard() {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll only the message list - scrollIntoView also scrolled the whole page.
+    const list = listRef.current;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
   }, [messages, status]);
 
   const ensureSocket = () => new Promise((resolve, reject) => {
@@ -913,6 +1132,9 @@ function ChatCard() {
       const data = JSON.parse(event.data);
       if (data.action === 'chat_reply') {
         clearPendingTimeout();
+        // The chat made a new plan -> put it on the dashboard card too.
+        if (data.workout_plan) planCallbacksRef.current.onWorkoutPlan?.(data.workout_plan);
+        if (data.meal_plan) planCallbacksRef.current.onMealPlan?.(data.meal_plan);
         setMessages(prev => [...prev, { role: 'assistant', text: data.reply }]);
         setStatus('idle');
       } else if (data.action === 'chat_error') {
@@ -926,8 +1148,9 @@ function ChatCard() {
     };
   });
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  // Called with a string when a suggestion is tapped, otherwise sends the text box.
+  const sendMessage = async (preset) => {
+    const text = (typeof preset === 'string' ? preset : input).trim();
     if (!text || status !== 'idle') return;
 
     setInput('');
@@ -971,10 +1194,10 @@ function ChatCard() {
       pendingTimeoutRef.current = setTimeout(() => {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          text: "No response after 45s - the backend may need restarting to pick up the coach chat feature, or it's just slow. Try again?",
+          text: "No response after 90s - the AI Engine may not be running, or Google's servers are very busy. Try again?",
         }]);
         setStatus('idle');
-      }, 45000);
+      }, 90000);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', text: "Couldn't reach the AI Engine - make sure the backend is running." }]);
       setStatus('idle');
@@ -989,51 +1212,89 @@ function ChatCard() {
   };
 
   return (
-    <GlassCard className="flex flex-col flex-1 min-h-[16rem]">
-      <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-4">AI Coach Chat</h3>
+    <GlassCard className="flex flex-col h-[34rem]">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/10 shrink-0">
+        <div className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-sm font-bold">&#10022;</div>
+        <div>
+          <h3 className="text-sm font-semibold text-white">GymBro</h3>
+          <p className="text-xs text-neutral-500">Ask about your plan, meals, form or past reports</p>
+        </div>
+      </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 mb-4">
+      {/* Messages - the only part that scrolls */}
+      <div
+        ref={listRef}
+        className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent]"
+      >
         {messages.map((m, i) => (
-          <div key={i} className={`flex items-end gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
-            {m.role === 'assistant' && (
-              <div className="w-7 h-7 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-sm">✦</div>
-            )}
-            <div className={`rounded-2xl px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap ${
-              m.role === 'user'
-                ? 'bg-white text-black rounded-br-md'
-                : 'bg-white/[0.06] border border-white/10 text-neutral-300 rounded-bl-md'
-            }`}>
-              {m.text}
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[88%] ${
+                m.role === 'user'
+                  ? 'bg-white text-black rounded-br-md whitespace-pre-wrap'
+                  : 'bg-white/[0.05] border border-white/10 text-neutral-200 rounded-bl-md'
+              }`}
+            >
+              {m.role === 'assistant' ? <FormattedText text={m.text} /> : m.text}
             </div>
           </div>
         ))}
+
+        {/* Starter questions until the first message is sent */}
+        {messages.length === 1 && status === 'idle' && (
+          <div className="flex flex-wrap gap-2 mt-1">
+            {CHAT_SUGGESTIONS.map(q => (
+              <button
+                key={q}
+                onClick={() => sendMessage(q)}
+                className="text-xs text-neutral-300 border border-white/15 rounded-full px-3 py-1.5 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Typing indicator */}
         {status !== 'idle' && (
-          <div className="flex items-end gap-2">
-            <div className="w-7 h-7 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-sm">✦</div>
-            <div className="bg-white/[0.06] border border-white/10 rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-neutral-500 italic">
-              {status === 'connecting' ? 'Connecting...' : 'Thinking...'}
+          <div className="flex justify-start">
+            <div className="bg-white/[0.05] border border-white/10 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
+              {status === 'connecting' ? (
+                <span className="text-xs text-neutral-500">Connecting...</span>
+              ) : (
+                [0, 150, 300].map(delay => (
+                  <span
+                    key={delay}
+                    className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce"
+                    style={{ animationDelay: `${delay}ms` }}
+                  />
+                ))
+              )}
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Text box - always visible at the bottom of the card */}
+      <div className="flex items-center gap-2 mt-4 shrink-0 bg-white/[0.04] border border-white/10 rounded-full pl-4 pr-1.5 py-1.5 focus-within:border-white/30 transition-colors">
         <input
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask your AI coach..."
-          className="flex-1 bg-white/[0.03] border border-white/10 rounded-full px-4 py-2.5 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
+          placeholder="Message GymBro..."
+          className="flex-1 bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none"
         />
         <button
           onClick={sendMessage}
           disabled={!input.trim() || status !== 'idle'}
           aria-label="Send message"
-          className="w-9 h-9 shrink-0 rounded-full bg-white text-black flex items-center justify-center disabled:bg-white/10 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors"
+          className="w-8 h-8 shrink-0 rounded-full bg-white text-black flex items-center justify-center disabled:bg-white/10 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors"
         >
-          ↑
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
         </button>
       </div>
     </GlassCard>
@@ -1099,15 +1360,20 @@ function PastReportsCard() {
       {status === 'ready' && reports.length > 0 && (
         <div className="space-y-2 max-h-80 overflow-y-auto pr-1 -mr-1">
           {reports.map(report => (
-            <div key={report.filename} className="flex items-center justify-between text-sm bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3">
-              <span className="text-neutral-300">
-                {new Date(report.created_at * 1000).toLocaleString()}
-              </span>
+            <div key={report.filename} className="flex items-center justify-between gap-3 bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 hover:bg-white/[0.05] transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white">Workout report</p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {new Date(report.created_at * 1000).toLocaleString(undefined, {
+                    weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+                  })}
+                </p>
+              </div>
               <button
                 onClick={() => downloadReport(report.filename)}
-                className="text-white font-semibold hover:opacity-70 transition-opacity"
+                className="shrink-0 text-xs font-semibold text-white border border-white/15 rounded-full px-3.5 py-1.5 hover:bg-white hover:text-black transition-colors"
               >
-                Download
+                &darr; Download
               </button>
             </div>
           ))}
@@ -1135,7 +1401,9 @@ function Dashboard({ onStartWorkout }) {
           <h1 className="text-4xl font-semibold tracking-tight">
             {getGreeting()}
           </h1>
-          <p className="text-neutral-500 mt-1.5">Ready to train?</p>
+          <p className="text-neutral-500 mt-1.5">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} &middot; Ready to train?
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
@@ -1145,12 +1413,21 @@ function Dashboard({ onStartWorkout }) {
             {/* Start Workout CTA */}
             <button
               onClick={onStartWorkout}
-              className="group w-full rounded-[28px] p-8 text-left bg-white text-black hover:bg-neutral-200 transition-colors duration-300 shadow-[0_0_60px_-15px_rgba(255,255,255,0.25)]"
+              className="group w-full rounded-[28px] p-8 text-left bg-white text-black hover:bg-neutral-100 transition-colors duration-300 shadow-[0_0_60px_-15px_rgba(255,255,255,0.25)] flex items-center justify-between gap-6"
             >
-              <h2 className="text-2xl font-semibold tracking-tight">
-                Start Workout <span className="inline-block transition-transform group-hover:translate-x-1">→</span>
-              </h2>
-              <p className="text-neutral-600 mt-1">Track squats, pushups, planks and more with real-time AI form coaching</p>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">Ready when you are</p>
+                <h2 className="text-3xl font-semibold tracking-tight mt-1">Start Workout</h2>
+                <p className="text-neutral-600 mt-1">Track squats, pushups, planks and more with real-time AI form coaching</p>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {['Live form feedback', 'Voice coaching', 'Rep counting', 'Injury report'].map(tag => (
+                    <span key={tag} className="text-xs font-medium text-neutral-700 bg-black/[0.06] rounded-full px-3 py-1">{tag}</span>
+                  ))}
+                </div>
+              </div>
+              <span className="shrink-0 w-14 h-14 rounded-full bg-black text-white flex items-center justify-center text-xl transition-transform duration-300 group-hover:translate-x-1">
+                &rarr;
+              </span>
             </button>
 
             <GlassCard>
@@ -1191,12 +1468,15 @@ function Dashboard({ onStartWorkout }) {
             <PastReportsCard />
           </div>
 
-          {/* Side column - stretches to match the main column's height (lg:items-stretch
-              above), so the chat card can fill the leftover space below Weather and end
-              up flush with the bottom of the main column instead of a fixed/arbitrary size. */}
-          <div className="flex flex-col gap-6 lg:h-full lg:sticky lg:top-10">
-            <WeatherCard />
-            <ChatCard />
+          {/* Side column - the chat has a fixed height and stays in view (sticky) while
+              the dashboard scrolls; only its message list scrolls, so the text box is
+              always visible. */}
+          <div className="flex flex-col gap-6 lg:sticky lg:top-10 lg:self-start">
+            
+            <ChatCard
+              onWorkoutPlan={workoutPlanState.replaceWith}
+              onMealPlan={mealPlanState.replaceWith}
+            />
           </div>
         </div>
       </div>

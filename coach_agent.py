@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-
+from gemini_util import GEMINI_BACKUP_MODEL, GEMINI_MODEL, is_transient, retry_transient
 from google import genai
 from google.genai import types
 from pypdf import PdfReader
@@ -10,9 +10,9 @@ from plan import bmi_category, generate_workout_plan, generate_meal_plan
 from rag import retrieve
 from report import REPORTS_DIR
 
-GEMINI_MODEL = "gemini-3.6-flash"
 
-SYSTEM_INSTRUCTION_TEMPLATE = """You are an AI fitness coach embedded in a workout-tracking app. \
+
+SYSTEM_INSTRUCTION_TEMPLATE = """You are GymBro, the AI fitness coach embedded in a workout-tracking app. \
 Today's date is {today} ({today_weekday}). Be encouraging, direct, and concise - this is a chat, \
 not an essay, so keep replies short unless the user asks for detail. Never invent specifics about \
 the user's past workouts, reports, or form faults - use the tools to look them up instead of \
@@ -146,47 +146,65 @@ def search_fitness_knowledge(query: str) -> str:
     return "\n\n---\n\n".join(c["text"] for c in chunks)
 
 
-def _make_generate_new_workout_plan(profile):
-    def generate_new_workout_plan() -> dict:
+def _make_generate_new_workout_plan(profile, plan_updates):
+    def generate_new_workout_plan(request: str) -> dict:
         """Generates a brand new 7-day WORKOUT plan for the user (no meals), using their
         saved height/weight/age/sex/goal, and REPLACES the one currently shown on their
         dashboard. SLOW (can take up to ~30 seconds) and calls a paid LLM - only call
-        this when the user explicitly asks to create/regenerate their workout plan, not
-        just to answer a question about the existing one (that's already in context above).
+        this when the user explicitly asks to create/regenerate/change their workout plan,
+        not just to answer a question about the existing one (that's already in context above).
+
+        `request`: every specific change the user asked for, in plain words - e.g.
+        "2 rest days per week instead of 1", "no leg day on Friday", "only 4 training
+        days". Pass an empty string if they just want a fresh plan.
         """
         if not profile or not profile.get("heightCm") or not profile.get("weightKg"):
             return {"error": "No profile saved - tell the user to fill out the Profile card on the dashboard first."}
-        return generate_workout_plan(
+        plan = generate_workout_plan(
             profile["heightCm"], profile["weightKg"], profile.get("age", 30),
             (profile.get("sex") or "MALE").upper(), (profile.get("goal") or "MAINTAIN").upper(),
+            user_request=request,
         )
+        # Handed back to the browser with the chat reply, so the dashboard card is
+        # actually replaced (see server._send_chat_reply).
+        if plan_updates is not None:
+            plan_updates["workout_plan"] = plan
+        return plan
 
     return generate_new_workout_plan
 
 
-def _make_generate_new_meal_plan(profile):
-    def generate_new_meal_plan() -> dict:
+def _make_generate_new_meal_plan(profile, plan_updates):
+    def generate_new_meal_plan(request: str) -> dict:
         """Generates a brand new 7-day MEAL plan for the user (no workouts), using their
         saved height/weight/age/sex/goal/diet, and REPLACES the one currently shown on
         their dashboard. SLOW (can take up to ~30 seconds) and calls a paid LLM - only
         call this when the user explicitly asks to create/regenerate their meal plan,
         not just to answer a question about the existing one (that's already in context
         above).
+
+        `request`: every specific change the user asked for, in plain words - e.g.
+        "no paneer", "more South Indian dishes", "a lighter dinner". Pass an empty
+        string if they just want a fresh plan.
         """
         if not profile or not profile.get("heightCm") or not profile.get("weightKg"):
             return {"error": "No profile saved - tell the user to fill out the Profile card on the dashboard first."}
         diet_category = "NON_VEG" if profile.get("diet") == "NON_VEG" else (
             "VEG_EGGS" if profile.get("eatsEggs") else "VEG_NO_EGGS"
         )
-        return generate_meal_plan(
+        plan = generate_meal_plan(
             profile["heightCm"], profile["weightKg"], profile.get("age", 30),
             (profile.get("sex") or "MALE").upper(), (profile.get("goal") or "MAINTAIN").upper(), diet_category,
+            user_request=request,
         )
+        if plan_updates is not None:
+            plan_updates["meal_plan"] = plan
+        return plan
 
     return generate_new_meal_plan
 
 
-def create_chat_session(profile, session_id, workout_plan=None, meal_plan=None):
+def create_chat_session(profile, session_id, workout_plan=None, meal_plan=None, plan_updates=None):
     """One stateful Gemini chat per WS connection - remembers the conversation across
     turns and has tool access scoped to this specific user's profile/session. The
     already-generated workout/meal plans (whatever's currently cached on the dashboard,
@@ -203,8 +221,8 @@ def create_chat_session(profile, session_id, workout_plan=None, meal_plan=None):
         _make_read_report(),
         _make_get_recent_faults(session_id),
         search_fitness_knowledge,
-        _make_generate_new_workout_plan(profile),
-        _make_generate_new_meal_plan(profile),
+        _make_generate_new_workout_plan(profile, plan_updates),
+        _make_generate_new_meal_plan(profile, plan_updates),
     ]
     now = datetime.now()
     system_instruction = SYSTEM_INSTRUCTION_TEMPLATE.format(
@@ -222,8 +240,20 @@ def create_chat_session(profile, session_id, workout_plan=None, meal_plan=None):
     # `chat` still needs), and the very next send_message fails with a confusing
     # "client has been closed" error. Returning both forces the caller to hold a
     # reference to `client` for as long as `chat` is in use.
-    return client, chat
+    return client, chat, config
 
 
-def send_chat_message(chat, message):
-    return chat.send_message(message).text
+def send_chat_message(client, chat, config, message):
+    """Returns (reply_text, chat). Retries busy (503/429) errors; if the main model
+    stays busy, moves the conversation - with its full history - to the backup
+    model and returns that new chat, so later messages keep their memory."""
+    try:
+        reply = retry_transient(lambda: chat.send_message(message).text, purpose="the coach chat")
+        return reply, chat
+    except Exception as e:
+        if not is_transient(e):
+            raise
+        print(f"Gemini (the coach chat): {GEMINI_MODEL} still busy, moving the chat to {GEMINI_BACKUP_MODEL}")
+        backup = client.chats.create(model=GEMINI_BACKUP_MODEL, config=config, history=chat.get_history())
+        reply = retry_transient(lambda: backup.send_message(message).text, purpose="the coach chat (backup)")
+        return reply, backup

@@ -9,8 +9,9 @@ import sys
 import cv2
 import mediapipe as mp
 
-from engine import EXERCISES, analyze_frame, new_state
+from engine import EXERCISES, HOLD_MODES, REP_TRANSITIONS, analyze_frame, new_state
 from utils import speak
+from voice_coach import VoiceCoach
 
 print("--- AI Fitness Engine Launcher ---")
 half = (len(EXERCISES) + 1) // 2
@@ -35,6 +36,7 @@ cap = cv2.VideoCapture(0)
 
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     state = new_state(CURRENT_MODE)
+    coach = VoiceCoach()
 
     print(f"\nStarting {CURRENT_MODE} Mode. Press 'q' on the video window to quit.")
 
@@ -53,9 +55,16 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         try:
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks.landmark
+                prev_stage = state.get("stage") if state else None
                 fb, clr, state, tel = analyze_frame(CURRENT_MODE, landmarks, state)
 
-                speak(fb)
+                rep_done = False
+                if CURRENT_MODE in REP_TRANSITIONS:
+                    worked, rest = REP_TRANSITIONS[CURRENT_MODE]
+                    rep_done = prev_stage == worked and state.get("stage") == rest
+                cue = coach.observe(fb, clr, rep_done, is_hold=CURRENT_MODE in HOLD_MODES)
+                if cue:
+                    speak(cue["text"], force=cue["urgent"])
 
                 cv2.rectangle(image, (0, 0), (640, 115), (0, 0, 0), -1)
                 cv2.putText(image, f"EXERCISE: {CURRENT_MODE}", (10, 25),

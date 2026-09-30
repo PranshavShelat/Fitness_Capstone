@@ -1,12 +1,11 @@
 import json
-import os
 import re
 
-from google import genai
+from gemini_util import generate
 
 from rag import retrieve_workout_context, retrieve_meal_context
 
-GEMINI_MODEL = "gemini-3.6-flash"
+# Model names, retries and the backup model live in gemini_util.py.
 
 # The full golden_dataset exercise catalog, not just the 10 the app can give live camera
 # feedback on - a workout PLAN is a broader recommendation than what the real-time form
@@ -98,12 +97,7 @@ def _daily_targets(height_cm, weight_kg, age, sex, goal, bmi_cat):
 
 
 def _call_gemini(prompt):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set - add it to a .env file before generating a plan.")
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    return response.text
+    return generate(prompt, purpose="the plan")
 
 
 def _parse_plan_json(response_text):
@@ -202,7 +196,17 @@ Respond with ONLY valid JSON, no markdown code fences, no commentary, matching e
 }}"""
 
 
-def generate_workout_plan(height_cm, weight_kg, age, sex, goal):
+def _with_user_request(prompt, user_request):
+    """Appends a specific request the user made in the coach chat (e.g. "2 rest days
+    instead of 1"). It is applied on top of - never instead of - the rules above."""
+    if not user_request or not user_request.strip():
+        return prompt
+    return (prompt + "\n\nThe user has also made this specific request - follow it, as long as it "
+            "doesn't break any rule above, and still respond with ONLY the JSON shape above:\n"
+            + user_request.strip())
+
+
+def generate_workout_plan(height_cm, weight_kg, age, sex, goal, user_request=None):
     """Full RAG flow for JUST the workout half of a plan - independent of
     generate_meal_plan so regenerating one never touches the other.
     """
@@ -212,6 +216,7 @@ def generate_workout_plan(height_cm, weight_kg, age, sex, goal):
 
     context_chunks, sources = retrieve_workout_context(goal)
     prompt = _build_workout_prompt(height_cm, weight_kg, age, sex, goal, bmi, category, context_chunks)
+    prompt = _with_user_request(prompt, user_request)
     response_text = _call_gemini(prompt)
     plan = _parse_plan_json(response_text)
 
@@ -224,7 +229,7 @@ def generate_workout_plan(height_cm, weight_kg, age, sex, goal):
     }
 
 
-def generate_meal_plan(height_cm, weight_kg, age, sex, goal, diet_category):
+def generate_meal_plan(height_cm, weight_kg, age, sex, goal, diet_category, user_request=None):
     """Full RAG flow for JUST the meal half of a plan - independent of
     generate_workout_plan so regenerating one never touches the other.
     """
@@ -238,6 +243,7 @@ def generate_meal_plan(height_cm, weight_kg, age, sex, goal, diet_category):
     prompt = _build_meal_prompt(
         height_cm, weight_kg, age, sex, goal, bmi, category, diet_category, context_chunks, calories, protein_g
     )
+    prompt = _with_user_request(prompt, user_request)
     response_text = _call_gemini(prompt)
     plan = _parse_plan_json(response_text)
 

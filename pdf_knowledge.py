@@ -1,8 +1,13 @@
 import glob
+import logging
 import os
 import re
 
 from pypdf import PdfReader
+
+# pypdf prints hundreds of harmless "Ignoring wrong pointing object" lines for
+# some PDFs (the Army manual) - they are recoverable structure quirks, not errors.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 PDF_SOURCE_DIR = "knowledge_base/source_pdfs"
 CHUNK_WORDS = 200

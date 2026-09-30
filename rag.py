@@ -1,5 +1,7 @@
 import glob
 import os
+import threading
+import time
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -126,7 +128,28 @@ def _load_chunks():
     return chunks
 
 
+# The plan endpoint and the coach chat can both hit an unbuilt index at the same
+# moment; without a lock each would rebuild it (twice the minutes, twice the RAM).
+_index_lock = threading.Lock()
+
+
+def warm_up():
+    """Build/load the index (and embedding model) ahead of time. server.py runs
+    this at startup, so a rebuild - needed whenever a knowledge_base file is
+    added or renamed, and slow (it re-reads every PDF) - never happens inside a
+    user's request, where it used to blow the 60 s request limit."""
+    t0 = time.time()
+    _build_or_load_index()
+    _get_model()
+    print(f"Knowledge index ready ({len(_chunks)} chunks, {time.time() - t0:.0f}s).")
+
+
 def _build_or_load_index():
+    with _index_lock:
+        _build_or_load_index_locked()
+
+
+def _build_or_load_index_locked():
     global _chunks, _embeddings
     if _chunks is not None and _embeddings is not None:
         return
@@ -141,6 +164,7 @@ def _build_or_load_index():
             _embeddings = cached["embeddings"]
             return
 
+    print("Knowledge base changed - rebuilding the search index (one-time, can take a few minutes)...")
     model = _get_model()
     texts = [c["text"] for c in chunks]
     embeddings = model.encode(texts, normalize_embeddings=True)

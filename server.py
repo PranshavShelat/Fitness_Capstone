@@ -11,12 +11,14 @@ from websockets.http11 import Response
 
 load_dotenv()
 
-from engine import EXERCISES, REP_TRANSITIONS, analyze_frame, new_state
+from engine import EXERCISES, HOLD_MODES, REP_TRANSITIONS, analyze_frame, new_state
 from db import init_db, log_fault
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
 from plan import generate_workout_plan, generate_meal_plan
 from coach_agent import create_chat_session, send_chat_message
+from voice_coach import VoiceCoach
+from gemini_util import is_transient
 
 VALID_GOALS = ("CUT", "MAINTAIN", "BULK")
 VALID_DIETS = ("VEG_EGGS", "VEG_NO_EGGS", "NON_VEG")
@@ -39,6 +41,81 @@ class MockLandmark:
 # pose-tracking noise so it never gets written into a report as fact.
 FAULT_MIN_STREAK = 5
 
+async def _send_report(websocket, data):
+    try:
+        filename, pdf_bytes = await asyncio.to_thread(
+            generate_report_pdf,
+            data.get("session_id"),
+            data.get("duration_seconds", 0),
+            data.get("rep_counts", {}),
+            data.get("plank_hold_seconds", 0),
+            data.get("profile"),
+        )
+        await websocket.send(json.dumps({
+            "action": "report_ready",
+            "filename": filename,
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+        }))
+    except websockets.ConnectionClosed:
+        # The PDF is already saved in reports/ - the Dashboard can still list it.
+        print("Report generated but the browser disconnected before it could be sent.")
+    except Exception as report_error:
+        try:
+            await websocket.send(json.dumps({"action": "report_error", "message": str(report_error)}))
+        except websockets.ConnectionClosed:
+            pass
+
+
+async def _send_chat_reply(websocket, session, data):
+    # One chat at a time per connection, so replies stay in order and the
+    # shared chat session is never used by two threads at once.
+    async with session["chat_lock"]:
+        try:
+            # One chat session per WS connection, created on the first message -
+            # bound to whatever profile/session_id came in with that first message,
+            # then reused (with full conversation memory) for the rest of this
+            # connection's messages.
+            if session["chat"] is None:
+                                session["chat_client"], session["chat"], session["chat_config"] = create_chat_session(
+                    data.get("profile"), data.get("session_id"),
+                    data.get("workout_plan"), data.get("meal_plan"),
+                    plan_updates=session["plan_updates"],
+                )
+            reply, session["chat"] = await asyncio.to_thread(
+                send_chat_message, session["chat_client"], session["chat"],
+                session["chat_config"], data.get("message", ""))
+            payload = {"action": "chat_reply", "reply": reply}
+            payload.update(session["plan_updates"])   # workout_plan / meal_plan, if any
+            session["plan_updates"].clear()
+            await websocket.send(json.dumps(payload))
+        except websockets.ConnectionClosed:
+            pass
+        except Exception as chat_error:
+            session["plan_updates"].clear()   # never attach a stale plan to a later reply
+            try:
+                message = str(chat_error)
+                if is_transient(chat_error):
+                    message = ("GymBro is busy right now because Google's servers are "
+                               "overloaded. Please try again in a minute.")
+                await websocket.send(json.dumps({"action": "chat_error", "message": message}))
+            except websockets.ConnectionClosed:
+                pass
+
+
+def _spawn(session, coro):
+    """Run slow work (report, Gemini chat) in the background.
+
+    It must NOT be awaited inside the message loop: while the loop is blocked,
+    the camera's ~30 frames/s pile up, the websockets library stops reading the
+    socket once its queue is full, the browser's keepalive pongs go unread, and
+    after 20 s the server kills the connection ("1011 keepalive ping timeout")
+    - which is exactly what happened to report generation once Gemini was on.
+    """
+    task = asyncio.create_task(coro)
+    session["tasks"].add(task)
+    task.add_done_callback(session["tasks"].discard)
+
+
 async def process_frame(websocket):
     # Per-connection state - each call to process_frame is a fresh connection,
     # so this is naturally isolated per client (no cross-client leakage).
@@ -50,6 +127,15 @@ async def process_frame(websocket):
         # Both lazily created on the first chat message - "chat_client" must be kept
         # alive here for as long as "chat" is in use (see create_chat_session).
         "chat": None, "chat_client": None,
+        "chat_lock": asyncio.Lock(),
+        # Plans the coach chat generated during a reply - sent to the browser with
+        # that reply so the dashboard cards update (filled by coach_agent's tools).
+        "plan_updates": {},
+        # Strong references to background tasks so they aren't garbage-collected.
+        "tasks": set(),
+        # Judges each 5 s window of frames and decides the ONE thing to say -
+        # the browser speaks only these cues, never the raw per-frame text.
+        "coach": VoiceCoach(),
     }
 
     async for message in websocket:
@@ -57,45 +143,11 @@ async def process_frame(websocket):
             data = json.loads(message)
 
             if data.get("action") == "generate_report":
-                try:
-                    filename, pdf_bytes = await asyncio.to_thread(
-                        generate_report_pdf,
-                        data.get("session_id"),
-                        data.get("duration_seconds", 0),
-                        data.get("rep_counts", {}),
-                        data.get("plank_hold_seconds", 0),
-                        data.get("profile"),
-                    )
-                    await websocket.send(json.dumps({
-                        "action": "report_ready",
-                        "filename": filename,
-                        "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
-                    }))
-                except Exception as report_error:
-                    await websocket.send(json.dumps({
-                        "action": "report_error",
-                        "message": str(report_error),
-                    }))
+                _spawn(session, _send_report(websocket, data))
                 continue
 
             if data.get("action") == "chat":
-                try:
-                    # One chat session per WS connection, created on the first message -
-                    # bound to whatever profile/session_id came in with that first message,
-                    # then reused (with full conversation memory) for the rest of this
-                    # connection's messages.
-                    if session["chat"] is None:
-                        session["chat_client"], session["chat"] = create_chat_session(
-                            data.get("profile"), data.get("session_id"),
-                            data.get("workout_plan"), data.get("meal_plan"),
-                        )
-                    reply = await asyncio.to_thread(send_chat_message, session["chat"], data.get("message", ""))
-                    await websocket.send(json.dumps({"action": "chat_reply", "reply": reply}))
-                except Exception as chat_error:
-                    await websocket.send(json.dumps({
-                        "action": "chat_error",
-                        "message": str(chat_error),
-                    }))
+                _spawn(session, _send_chat_reply(websocket, session, data))
                 continue
 
             mode = data.get("mode")
@@ -121,6 +173,7 @@ async def process_frame(websocket):
                 session["fault_candidate"] = None
                 session["fault_streak"] = 0
                 session["fault_logged"] = False
+                session["coach"].reset()
             session["mode"] = mode
 
             state = session["states"].get(mode) or new_state(mode)
@@ -167,6 +220,8 @@ async def process_frame(websocket):
                 session["fault_streak"] = 0
                 session["fault_logged"] = False
 
+            voice_cue = session["coach"].observe(fb, clr, rep_completed, is_hold=mode in HOLD_MODES)
+
             # Convert BGR (OpenCV) color to Hex or RGB string for CSS
             css_color = f"rgb({clr[2]}, {clr[1]}, {clr[0]})"
 
@@ -178,6 +233,9 @@ async def process_frame(websocket):
                 "mode": mode,
                 "repCompleted": rep_completed,
                 "plankHoldDelta": round(plank_hold_delta, 3),
+                # None on most frames; {"text", "kind", "urgent", "source"} when the
+                # coach has something to say (every ~5 s, or at once for an injury).
+                "voiceCue": voice_cue,
             }
 
             await websocket.send(json.dumps(response))
@@ -284,10 +342,14 @@ async def handle_http_request(connection, request):
 
 async def main():
     init_db()
+    # Build the RAG index in the background right away, so the first plan or
+    # chat request doesn't have to wait for it (see rag.warm_up).
+    from rag import warm_up
+    asyncio.get_running_loop().run_in_executor(None, warm_up)
     # open_timeout bounds the whole opening handshake, which includes handle_http_request -
     # the default 10s is fine for a websocket handshake but too short for /plan, which calls
-    # out to Gemini and can take longer than that.
-    async with websockets.serve(process_frame, "localhost", 8000, process_request=handle_http_request, open_timeout=60):
+    # out to Gemini (with retries and a backup model when it is busy - gemini_util.py).
+    async with websockets.serve(process_frame, "localhost", 8000, process_request=handle_http_request, open_timeout=120):
         print("Python Fitness Engine WebSocket Server running on ws://localhost:8000")
         await asyncio.Future()  # run forever
 

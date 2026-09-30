@@ -13,7 +13,7 @@ import time
 from pose_math import calculate_angle  # noqa: F401  (re-exported for compatibility)
 
 _last_spoken_at = 0.0
-SPEAK_COOLDOWN_SECONDS = 5
+SPEAK_COOLDOWN_SECONDS = 2.5
 
 # Set once if the audio backend turns out to be unavailable, so a missing gTTS
 # or playsound install fails quietly the first time instead of printing a thread
@@ -47,11 +47,13 @@ def _play_audio_in_background(text):
                 pass
 
 
-def speak(text):
+def speak(text, force=False):
+    """voice_coach.VoiceCoach decides when to talk; the cooldown is only a
+    safety net. force=True (urgent injury cues) bypasses it."""
     global _last_spoken_at
     if not text or _audio_disabled:
         return
-    if time.time() - _last_spoken_at < SPEAK_COOLDOWN_SECONDS:
+    if not force and time.time() - _last_spoken_at < SPEAK_COOLDOWN_SECONDS:
         return
     _last_spoken_at = time.time()
     threading.Thread(target=_play_audio_in_background, args=(text,), daemon=True).start()
