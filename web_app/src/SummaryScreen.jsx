@@ -14,60 +14,73 @@ function SummaryScreen({ repCounts, plankHoldSeconds, elapsedSeconds, exercises,
   const totalReps = Object.values(repCounts).reduce((sum, n) => sum + n, 0);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-      <div className="w-full max-w-md bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[28px] p-8 shadow-2xl">
-        <h2 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-1">Workout Complete</h2>
-        <p className="text-4xl font-semibold tracking-tight mb-6">
-          {formatDuration(elapsedSeconds)}
-        </p>
-
-        <div className="space-y-2 mb-6">
-          {repExercises.map(ex => (
-            <div key={ex.id} className="flex items-center justify-between text-sm">
-              <span className="text-neutral-400">{ex.name}</span>
-              <span className="font-mono text-neutral-200">{repCounts[ex.id]} {repCounts[ex.id] === 1 ? 'rep' : 'reps'}</span>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 backdrop-blur-md p-4 sm:p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="summary-title"
+           className="w-full max-w-md bg-surface rounded-[32px] shadow-2xl overflow-hidden">
+        {/* Header band */}
+        <div className="bg-primary text-white px-8 pt-8 pb-7">
+          <h2 id="summary-title" className="text-lg font-medium text-white/85">Workout complete. Nice work!</h2>
+          <div className="flex items-end gap-8 mt-3">
+            <div>
+              <p className="text-5xl font-semibold tabular-nums leading-none">{formatDuration(elapsedSeconds)}</p>
+              <p className="text-sm text-white/75 mt-1.5">time</p>
             </div>
-          ))}
-          {plankDone && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-neutral-400">Plank Hold</span>
-              <span className="font-mono text-neutral-200">{Math.round(plankHoldSeconds)}s</span>
+            <div>
+              <p className="text-5xl font-semibold tabular-nums leading-none text-sun">{totalReps}</p>
+              <p className="text-sm text-white/75 mt-1.5">total reps</p>
             </div>
-          )}
-          {repExercises.length === 0 && !plankDone && (
-            <p className="text-sm text-neutral-500">No reps were tracked in this workout.</p>
-          )}
+          </div>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-white/10 mb-6">
-          <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">Total Reps</span>
-          <span className="text-xl font-semibold text-white">{totalReps}</span>
-        </div>
+        <div className="px-8 py-6">
+          <ul className="divide-y divide-line mb-6">
+            {repExercises.map(ex => (
+              <li key={ex.id} className="flex items-center justify-between py-2.5 text-[15px]">
+                <span className="text-ink">{ex.name}</span>
+                <span className="font-semibold tabular-nums text-ink">{repCounts[ex.id]} {repCounts[ex.id] === 1 ? 'rep' : 'reps'}</span>
+              </li>
+            ))}
+            {plankDone && (
+              <li className="flex items-center justify-between py-2.5 text-[15px]">
+                <span className="text-ink">Plank hold</span>
+                <span className="font-semibold tabular-nums text-ink">{Math.round(plankHoldSeconds)} sec</span>
+              </li>
+            )}
+            {repExercises.length === 0 && !plankDone && (
+              <li className="py-2.5 text-sm text-muted">No reps were tracked in this workout.</li>
+            )}
+          </ul>
 
-        <button
-          onClick={onGenerateReport}
-          disabled={reportStatus === 'generating'}
-          className="w-full mb-2 py-3 rounded-full font-semibold bg-white text-black hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {reportStatus === 'generating' ? 'Generating Report...' : 'Generate Injury Report'}
-        </button>
-        {reportStatus === 'error' && (
-          <p className="text-red-400 text-xs text-center mb-4">{reportError}</p>
-        )}
+          <button
+            onClick={onGenerateReport}
+            disabled={reportStatus === 'generating'}
+            className="w-full py-3.5 rounded-full font-semibold bg-sun hover:bg-sun-deep text-ink disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {reportStatus === 'generating' ? 'Writing your report...' : 'Get my form report'}
+          </button>
+          <p className="text-xs text-muted text-center mt-2">
+            {reportStatus === 'generating'
+              ? 'This takes about 20 seconds. The PDF downloads when it is ready.'
+              : 'A PDF of what went well and what to fix, with videos to watch.'}
+          </p>
+          {reportStatus === 'error' && (
+            <p className="text-bad text-sm text-center mt-2">{reportError}</p>
+          )}
 
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={onDismiss}
-            className="w-full py-3 rounded-full font-semibold border border-white/15 text-white hover:bg-white/5 transition-colors"
-          >
-            Start New Workout
-          </button>
-          <button
-            onClick={onBackToDashboard}
-            className="w-full py-3 rounded-full font-medium bg-transparent text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
-            Back to Dashboard
-          </button>
+          <div className="grid grid-cols-2 gap-2 mt-5">
+            <button
+              onClick={onDismiss}
+              className="py-3 rounded-full font-semibold bg-primary-soft text-primary hover:bg-primary hover:text-white transition-colors"
+            >
+              New workout
+            </button>
+            <button
+              onClick={onBackToDashboard}
+              className="py-3 rounded-full font-semibold text-muted hover:text-ink hover:bg-tint transition-colors"
+            >
+              Back to dashboard
+            </button>
+          </div>
         </div>
       </div>
     </div>

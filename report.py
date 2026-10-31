@@ -6,7 +6,9 @@ from datetime import datetime
 from fpdf import FPDF
 from gemini_util import generate
 
-from db import get_faults, delete_faults
+from db import get_fault_details, delete_faults
+from form_reference import (LOW_CONFIDENCE_RATE, checkpoints, describe_measurement, fault_metric,
+                            guide_for_mode, reference_false_alarm_rates, source_lines, video_url)
 from injury_knowledge import EVIDENCE_LABELS, GENERAL_PREVENTION, MISHAP_EXPLANATIONS, SOURCES
 from plan import bmi_category
 
@@ -25,34 +27,133 @@ MODE_LABELS = {
 }
 
 
-def summarize_faults(rows):
-    """rows: list of (mode, message, occurred_at) tuples from db.get_faults.
-    Groups by (mode, message) so the same message on two different exercises
-    (e.g. "TUCK ELBOWS IN" on both Bicep and Hammer curls) is tracked separately.
-    Keeps an internal `count` used only to pick sort order - never surfaced in
-    the prompt or PDF text, since per-frame occurrence counts are noisy and
-    don't mean what they look like.
+# Research-backed risks are listed before manual guidance, and both before
+# plain technique tips - the report leads with what matters most.
+EVIDENCE_RANK = {"research": 0, "guideline": 1, "coaching": 2}
+
+
+def _rep_list(reps):
+    return ", ".join(str(r) for r in reps)
+
+
+def summarize_faults(rows, rep_counts=None):
+    """rows: (mode, message, occurred_at[, rep_index, measured]) tuples from db.
+    Groups by (mode, message). For each fault it works out:
+      * which reps it happened on, out of how many the user did - a rep-level
+        count IS meaningful (unlike the old per-frame count, which was noise);
+      * the worst measured value vs the engine's safe limit;
+      * whether it only appeared late in the set (a fatigue pattern);
+      * whether the check is low confidence because it also fires on the
+        correct reference recording.
     """
-    counts = {}
-    for mode, message, _occurred_at in rows:
-        key = (mode, message)
-        counts[key] = counts.get(key, 0) + 1
+    rep_counts = rep_counts or {}
+    try:
+        false_rates = reference_false_alarm_rates()
+    except Exception as e:  # recordings missing etc. - never block the report
+        print("Could not compute reference false-alarm rates:", e)
+        false_rates = {}
+
+    groups = {}
+    for row in rows:
+        mode, message = row[0], row[1]
+        rep_index = row[3] if len(row) > 3 else None
+        measured = row[4] if len(row) > 4 else None
+        g = groups.setdefault((mode, message), {"events": 0, "reps": set(), "values": []})
+        g["events"] += 1
+        if rep_index is not None:
+            g["reps"].add(int(rep_index))
+        if measured is not None:
+            g["values"].append(measured)
 
     summary = []
-    for (mode, message), count in counts.items():
+    for (mode, message), g in groups.items():
         info = MISHAP_EXPLANATIONS.get(message, {})
+        total = int(rep_counts.get(mode) or 0)
+        reps = sorted(g["reps"])
+
+        _metric, direction = fault_metric(mode, message)
+        worst = None
+        if g["values"] and direction:
+            worst = min(g["values"]) if direction == "min" else max(g["values"])
+
+        fatigue = (total >= 4 and len(reps) >= 2 and min(reps) > total / 2)
+        rate = false_rates.get((mode, message), 0.0)
+
         summary.append({
             "mode": mode,
             "message": message,
-            "count": count,
+            "count": g["events"],
             "label": info.get("label", message.title()),
             "explanation": info.get("explanation", ""),
             "evidence": info.get("evidence"),
             "prevention": info.get("prevention") or {},
             "sources": info.get("sources") or [],
+            "reps": reps,
+            "total_reps": total,
+            "measurement": describe_measurement(mode, message, worst),
+            "fatigue": fatigue,
+            "low_confidence": rate >= LOW_CONFIDENCE_RATE,
+            "reference_rate": rate,
         })
-    summary.sort(key=lambda fault: fault["count"], reverse=True)
+    summary.sort(key=lambda f: (f["low_confidence"], EVIDENCE_RANK.get(f["evidence"], 3),
+                                -len(f["reps"]), -f["count"]))
     return summary
+
+
+def reps_text(fault):
+    """'3 of 10 reps (reps 3, 5, 6)' / 'reps 3, 5' / '' for holds."""
+    reps, total = fault.get("reps") or [], fault.get("total_reps") or 0
+    if not reps:
+        return ""
+    counted = [r for r in reps if not total or r <= total]
+    unfinished = len(reps) - len(counted)
+    if total:
+        text = f"{len(counted)} of your {total} {'rep' if total == 1 else 'reps'}"
+        if counted:
+            text += f" (rep{'s' if len(counted) > 1 else ''} {_rep_list(counted)})"
+        if unfinished:
+            text += " + an unfinished last rep"
+        return text
+    return f"rep{'s' if len(reps) > 1 else ''} {_rep_list(reps)}"
+
+
+def low_confidence_text(fault):
+    return ("The camera may have got this one wrong - it sometimes flags this even when the form "
+            "is good. Check yourself in a mirror or film a set to be sure. "
+            f"(It triggers on {fault['reference_rate'] * 100:.0f}% of our correct-form reference video.)")
+
+
+def exercise_scorecard(rep_counts, plank_hold_seconds, fault_summary):
+    """One line per exercise done: clean reps out of total, and the issues seen."""
+    lines = []
+    by_mode = {}
+    for f in fault_summary:
+        by_mode.setdefault(f["mode"], []).append(f)
+    modes = [m for m, c in (rep_counts or {}).items() if c]
+    if plank_hold_seconds and "PLANK" not in modes:
+        modes.append("PLANK")
+    for f in fault_summary:  # an exercise with faults but no finished reps still gets a line
+        if f["mode"] not in modes:
+            modes.append(f["mode"])
+
+    for mode in modes:
+        faults = by_mode.get(mode, [])
+        total = int((rep_counts or {}).get(mode) or 0)
+        name = MODE_LABELS.get(mode, mode.title())
+        confident = [f for f in faults if not f["low_confidence"]]
+        if total:
+            bad = set()
+            for f in confident:
+                bad.update(r for r in f["reps"] if r <= total)
+            clean = total - len(bad)
+            head = f"{clean} of {total} reps looked good"
+        elif mode == "PLANK":
+            head = f"held for {round(plank_hold_seconds or 0)} seconds"
+        else:
+            head = "no completed reps"
+        issues = ", ".join(f["label"] + (" (camera unsure)" if f["low_confidence"] else "") for f in faults)
+        lines.append((name, head, issues or "none - nice work"))
+    return lines
 
 
 def build_gemini_prompt(fault_summary):
@@ -64,10 +165,13 @@ def build_gemini_prompt(fault_summary):
         "12-year-old could follow it: short sentences, everyday words, no jargon - if a "
         "body part or term needs naming, explain it in brackets. Do not mention studies, "
         "manuals, page numbers or sources by name; those are printed separately. "
-        "Do not state or imply how many times it happened - "
-        "just describe it generally (e.g. 'this happened during your set'), since exact "
-        "per-frame counts aren't meaningful to the user. Be direct and factual, not "
-        "alarmist. Use ONLY the facts in each fault's description below - do not add "
+        "Where a fault lists the reps it happened on, you may use that exact fact (e.g. "
+        "'on 3 of your 10 reps'). Do NOT mention angles, degrees or percentages - the exact "
+        "measurements are printed separately for those who want them; your job is the plain "
+        "explanation. Never invent numbers. If a fault says it "
+        "only appeared in later reps, you may say it showed up as you got tired. If a fault is "
+        "marked LOW CONFIDENCE, say gently that the camera may have misread it. Be direct and "
+        "factual, not alarmist. Use ONLY the facts in each fault's description below - do not add "
         "risks, statistics, studies, body parts or advice that are not in it, because "
         "every claim in this report must be traceable to a cited source. Do not give "
         "fixes or drills; those are printed separately under each paragraph. Keep each "
@@ -77,7 +181,18 @@ def build_gemini_prompt(fault_summary):
         "Faults detected this session:",
     ]
     for i, fault in enumerate(fault_summary):
-        lines.append(f'{i}. {fault["mode"]} - "{fault["label"]}": {fault["explanation"]}')
+        facts = []
+        if reps_text(fault):
+            facts.append("happened on " + reps_text(fault))
+        m = fault.get("measurement")
+        if m:
+            facts.append(f"worst measured {m['what'].lower()}: {m['value']}, safe limit {m['limit']}")
+        if fault.get("fatigue"):
+            facts.append("only appeared in the later reps of the set")
+        if fault.get("low_confidence"):
+            facts.append("LOW CONFIDENCE - this check also fires on correct form")
+        extra = f" [Session facts: {'; '.join(facts)}]" if facts else ""
+        lines.append(f'{i}. {fault["mode"]} - "{fault["label"]}": {fault["explanation"]}{extra}')
     lines.append("")
     lines.append(
         f"Respond with a JSON array of exactly {len(fault_summary)} strings - one paragraph "
@@ -226,20 +341,35 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
     _line(pdf, 7, f"Duration: {minutes:02d}:{seconds:02d}")
     pdf.ln(2)
 
-    exercise_lines = [
-        f"{MODE_LABELS.get(mode, mode.title())}: {count} {'rep' if count == 1 else 'reps'}"
-        for mode, count in (rep_counts or {}).items() if count
-    ]
-    if plank_hold_seconds:
-        exercise_lines.append(f"Planks: {round(plank_hold_seconds)}s held")
-
+    # Form scorecard: what went RIGHT as well as wrong, per exercise.
     pdf.set_font("Helvetica", "B", 11)
-    _line(pdf, 7, "Exercises Completed")
-    pdf.set_font("Helvetica", "", 11)
-    if exercise_lines:
-        for line in exercise_lines:
-            _line(pdf, 7, f"- {line}")
+    _line(pdf, 7, "How Your Form Looked")
+    scorecard = exercise_scorecard(rep_counts, plank_hold_seconds, fault_summary)
+    if scorecard:
+        for name, head, issues in scorecard:
+            _labelled(pdf, f"- {name}: {head}.", f"Issues: {issues}.")
+        # One-line verdict a non-lifter can act on.
+        total_reps = sum(int(c or 0) for c in (rep_counts or {}).values())
+        bad_reps = 0
+        for mode, count in (rep_counts or {}).items():
+            bad = set()
+            for f in fault_summary:
+                if f["mode"] == mode and not f["low_confidence"]:
+                    bad.update(r for r in f["reps"] if r <= int(count or 0))
+            bad_reps += len(bad)
+        main = next((f for f in fault_summary if not f["low_confidence"]), None)
+        verdict = (f"{total_reps - bad_reps} of your {total_reps} reps looked good. " if total_reps else "")
+        verdict += (f"The main thing to work on: {main['label']}." if main
+                    else "No clear form problems - keep it up.")
+        pdf.ln(1)
+        _labelled(pdf, "In one line:", verdict)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(90, 90, 90)
+        _line(pdf, 4.5, "A rep looks good when the camera did not flag anything on it. Problems marked "
+                        "\"camera unsure\" are listed but not counted against you.")
+        pdf.set_text_color(0, 0, 0)
     else:
+        pdf.set_font("Helvetica", "", 11)
         _line(pdf, 7, "No exercises were tracked this session.")
     pdf.ln(4)
 
@@ -256,7 +386,11 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
         for fault in fault_summary:
             fix = (fault.get("prevention") or {}).get("fix", "")
             first = fix.split(". ")[0].rstrip(".") + "." if fix else ""
-            _labelled(pdf, f"- {fault['label']}:", first)
+            where = reps_text(fault)
+            tag = f" [{where}]" if where else ""
+            if fault.get("low_confidence"):
+                tag += " [camera unsure]"
+            _labelled(pdf, f"- {fault['label']}{tag}:", first)
         pdf.ln(3)
 
     pdf.set_font("Helvetica", "B", 13)
@@ -288,6 +422,28 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
             pdf.set_text_color(0, 0, 0)
             pdf.ln(1)
 
+            # Hard numbers from the camera, so the fault is evidence, not a verdict.
+            m = fault.get("measurement")
+            short = (m or {}).get("plain") or ""
+            if reps_text(fault):
+                short = (short + " " if short else "") + f"It happened on {reps_text(fault)}."
+            if short:
+                _labelled(pdf, "In short:", short)
+            if m:
+                # The specifics, for anyone who wants them - kept small and secondary.
+                pdf.set_font("Helvetica", "", 8.5)
+                pdf.set_text_color(110, 110, 110)
+                _line(pdf, 4.5, f"Details: {m['what'].lower()} reached {m['value']}; "
+                                f"the safe range is {m['limit']}.")
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(1)
+            if fault.get("fatigue"):
+                _labelled(pdf, "Pattern:", "This only showed up in the second half of your set, which "
+                                           "usually means you were getting tired. End the set a rep or "
+                                           "two earlier, or lower the weight.")
+            if fault.get("low_confidence"):
+                _note(pdf, low_confidence_text(fault))
+
             pdf.set_font("Helvetica", "B", 11)
             _line(pdf, 7, "What happened")
             pdf.set_font("Helvetica", "", 11)
@@ -314,6 +470,62 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
                 pdf.set_text_color(0, 0, 0)
             pdf.ln(2)
 
+    # The correct form for every exercise done today (form_reference.py) - the
+    # same guide shown in the workout planner, with the engine's own numbers.
+    done_modes = [m for m, c in (rep_counts or {}).items() if c]
+    if plank_hold_seconds and "PLANK" not in done_modes:
+        done_modes.append("PLANK")
+    for f in fault_summary or []:
+        if f["mode"] not in done_modes:
+            done_modes.append(f["mode"])
+    guide_sources = []
+    if done_modes:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 13)
+        _line(pdf, 10, "How Each Exercise Should Look")
+        pdf.set_font("Helvetica", "", 10)
+        _line(pdf, 6, "What good form looks like for each exercise you did today, with a video "
+                      "to watch before your next session.")
+        for mode in done_modes:
+            name, g = guide_for_mode(mode)
+            if not g:
+                continue
+            if pdf.get_y() + 50 > pdf.page_break_trigger:
+                pdf.add_page()
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "B", 12)
+            _line(pdf, 7, name)
+            pdf.set_font("Helvetica", "I", 9)
+            pdf.set_text_color(90, 90, 90)
+            _line(pdf, 5, "Works: " + g["muscles"])
+            pdf.set_text_color(0, 0, 0)
+            _labelled(pdf, "Set up:", " ".join(g["setup"]))
+            _labelled(pdf, "Do it:", " ".join(g["execution"]))
+            _labelled(pdf, "Breathing:", g["breathing"])
+            url = video_url(name)
+            if url:
+                pdf.set_x(pdf.l_margin)
+                pdf.set_font("Helvetica", "B", 10)
+                pdf.write(6, "Watch how it's done: ")
+                pdf.set_font("Helvetica", "U", 10)
+                pdf.set_text_color(20, 80, 200)
+                pdf.write(6, _safe(url.replace("https://", "")), link=url)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(7)
+            cps = checkpoints(mode)
+            if cps:
+                pdf.set_font("Helvetica", "", 8.5)
+                pdf.set_text_color(110, 110, 110)
+                _line(pdf, 4.5, "For the curious - what the camera checks: " + " ".join(cps))
+                pdf.set_text_color(0, 0, 0)
+            srcs = source_lines(g)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(90, 90, 90)
+            _line(pdf, 4.5, "Sources: " + ("; ".join(srcs) if srcs else
+                                            "standard technique coaching (no specific manual page)"))
+            pdf.set_text_color(0, 0, 0)
+            guide_sources.extend(k for k, _loc in g["sources"])
+
     # General, sourced prevention advice - useful after any session.
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 13)
@@ -333,7 +545,7 @@ def render_pdf(duration_seconds, rep_counts, plank_hold_seconds, fault_summary, 
         for key, _loc in fault.get("sources") or []:
             if key not in used:
                 used.append(key)
-    for _text, key, _loc in GENERAL_PREVENTION:
+    for key in [k for _t, k, _l in GENERAL_PREVENTION] + guide_sources:
         if key not in used:
             used.append(key)
     pdf.set_font("Helvetica", "B", 13)
@@ -361,8 +573,8 @@ def generate_report_pdf(session_id, duration_seconds, rep_counts, plank_hold_sec
     Dashboard.jsx saves to localStorage - if present, a Health Summary section is added.
     Returns (filename, pdf_bytes).
     """
-    rows = get_faults(session_id)
-    fault_summary = summarize_faults(rows)
+    rows = get_fault_details(session_id)
+    fault_summary = summarize_faults(rows, rep_counts)
 
     # Gemini only rewrites the explanation into friendlier prose. If it is
     # unavailable (no key, no network, quota, bad model name) the report still

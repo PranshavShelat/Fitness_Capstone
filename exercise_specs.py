@@ -35,6 +35,24 @@ GOLDEN_CSV = {
 }
 
 ARM = ("shoulder", "elbow", "wrist")
+
+# Exercises whose set naturally begins in the WORKED stage of their rep counter.
+STARTS_IN_WORK = {"PRESS"}
+
+# The joints each exercise's REP ANGLE is built from. If any of these is hidden
+# or out of the picture, tracking pauses ("step back") instead of counting reps
+# from MediaPipe's guesses. Joints used only by secondary checks are left out on
+# purpose - e.g. the hips during a seated shoulder press are often off-screen.
+CRITICAL_JOINTS = {
+    "SQUAT": ("hip", "knee", "ankle"), "LEGEXT": ("hip", "knee", "ankle"),
+    "PLANK": ("shoulder", "hip", "knee"), "TWIST": ("shoulder", "hip", "knee"),
+    "RDL": ("shoulder", "hip", "knee"), "HIPTHRUST": ("shoulder", "hip", "knee"),
+    "LEGRAISE": ("shoulder", "hip", "knee"), "LATERAL": ("hip", "shoulder", "elbow"),
+    "DIP": ("shoulder", "elbow", "wrist"), "PUSHUP": ("shoulder", "elbow", "wrist"),
+    "PULLUP": ("shoulder", "elbow", "wrist"), "BICEP": ("shoulder", "elbow", "wrist"),
+    "HAMMER": ("shoulder", "elbow", "wrist"), "PRESS": ("shoulder", "elbow", "wrist"),
+    "PULLDOWN": ("shoulder", "elbow", "wrist"),
+}
 LEG = ("hip", "knee", "ankle")
 
 
@@ -320,12 +338,20 @@ def build_specs(side="auto", calib_side=None, gates=True, validate=True):
     # Capped at 85 degrees: above shoulder height the subacromial space narrows,
     # so the app never coaches a user past that even if the recording went higher.
     lat_target = min(float(lat) - 10, 85)
+    # "Too high" limit. Measured from the front, this angle is taken against the
+    # shoulder-to-hip line, which slopes inward (hips are narrower than
+    # shoulders), so arms at true shoulder height read ~100-110 deg, not 90. The
+    # old limit (TARGET_UP + BUFFER = 100) therefore fired on every correct rep of
+    # the reference recording (peaks 103-120 deg, 15% of frames). The limit sits
+    # just above the highest correct peak instead; genuinely high raises
+    # (e.g. 150+ deg) are still caught. Parity build keeps the original 100.
+    lat_high = 125 if gates else lat_target + 15
     src, note = _src(lat)
     specs["LATERAL"] = ExerciseSpec(
         id="LATERAL", name="Lateral Raises", reads=("hip", "shoulder", "elbow", "wrist"),
         side=side, min_visibility=vis(0.35),
         calibration_source=src, calibration_notes=note or f"capped at {lat_target:.0f} deg",
-        params={"DOWN": 30, "TARGET_UP": lat_target, "BUFFER": 15, "ELBOW_MIN": 140},
+        params={"DOWN": 30, "TARGET_UP": lat_target, "BUFFER": 15, "ELBOW_MIN": 140, "HIGH_MAX": lat_high},
         metrics={
             "raise": angle("hip", "shoulder", "elbow"),
             "elbow": angle("shoulder", "elbow", "wrist"),
@@ -337,7 +363,7 @@ def build_specs(side="auto", calib_side=None, gates=True, validate=True):
         ),
         rules=[
             Rule(lambda M, P: M["elbow"] < P["ELBOW_MIN"], "STRAIGHTEN ARMS (TOO BENT)", RED),
-            Rule(lambda M, P: M["raise"] > P["TARGET_UP"] + P["BUFFER"], "TOO HIGH (LOWER ARMS)", RED),
+            Rule(lambda M, P: M["raise"] > P["HIGH_MAX"], "TOO HIGH (LOWER ARMS)", RED),
             Rule(lambda M, P: M["raise"] < P["TARGET_UP"] - P["BUFFER"] and M["_stage"] == "DOWN",
                  "RAISE ARMS HIGHER", ORANGE),
             Rule(lambda M, P: M["raise"] < P["TARGET_UP"] - P["BUFFER"], "LOWER ARMS", YELLOW),
@@ -948,6 +974,18 @@ def build_specs(side="auto", calib_side=None, gates=True, validate=True):
     for draft_id in DRAFT:
         specs[draft_id].enabled = False
 
+    # The parity build (gates=False) reproduces the original engine exactly, so
+    # it also switches off the webcam-robustness checks in spec_framework.
+    for spec_id, spec in specs.items():
+        spec.robust = gates
+        spec.critical = CRITICAL_JOINTS.get(spec_id, ())
+        # Start every rep counter in its REST stage (see spec_framework, check
+        # 4). The parity build keeps the original starting stages.
+        if gates and spec.rep:
+            spec.rep.initial = spec.rep.rest_stage
+            # The press starts with the weights at the shoulders - its worked
+            # stage - so its first press must count without a "rest" first.
+            spec.starts_in_work = spec_id in STARTS_IN_WORK
     return specs
 
 

@@ -1,24 +1,59 @@
 @import "tailwindcss";
 
+/* Design tokens - light & friendly. Use as bg-canvas, text-ink, border-line,
+   bg-primary, text-good, etc. Green/amber/red are reserved for form quality
+   (good / careful / risky) so colour always means something. */
+@theme {
+  --font-sans: "Lexend", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-canvas: #F5F4FB;        /* page background, lavender-tinted white */
+  --color-surface: #FFFFFF;       /* cards */
+  --color-tint: #F8F7FE;          /* tiles inside cards */
+  --color-ink: #1E1B3A;           /* main text */
+  --color-muted: #6B6886;         /* secondary text */
+  --color-line: #E7E4F4;          /* borders, dividers */
+  --color-line-strong: #D3CEEA;
+
+  --color-primary: #5B4BDB;       /* violet accent */
+  --color-primary-deep: #4A3BC4;
+  --color-primary-soft: #EEEBFF;
+
+  --color-sun: #FFD15C;           /* the "go" yellow */
+  --color-sun-deep: #F5BE2E;
+
+  --color-good: #138A5E;
+  --color-good-soft: #E3F6EE;
+  --color-warn: #B86E00;
+  --color-warn-soft: #FFF2DB;
+  --color-bad: #D23B50;
+  --color-bad-soft: #FDE8EB;
+}
+
 body {
   margin: 0;
   padding: 0;
-  background-color: #000;
-  color: #fff;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-feature-settings: "cv11", "ss01";
-  letter-spacing: -0.01em;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Thin, dark scrollbars everywhere - the browser default is bright white,
-   which stands out badly on this dark UI. */
+/* Visible keyboard focus everywhere */
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+  outline-offset: 2px;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: rgba(30, 27, 58, 0.18) transparent;
 }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 999px; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+*::-webkit-scrollbar-thumb { background: rgba(30, 27, 58, 0.18); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(30, 27, 58, 0.3); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

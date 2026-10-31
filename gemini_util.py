@@ -16,10 +16,10 @@ import time
 
 from google import genai
 
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 # Tried when GEMINI_MODEL keeps answering 503/429 - a lighter model is usually
 # less crowded, and an answer from it beats no answer.
-GEMINI_BACKUP_MODEL = "gemini-3.5-flash-lite"
+GEMINI_BACKUP_MODEL = "gemini-3.6-flash-lite"
 
 _TRANSIENT = ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
 

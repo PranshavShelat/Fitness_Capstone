@@ -30,24 +30,24 @@ function describeWeatherCode(code) {
 
 // US EPA AQI breakpoints (0-500 scale).
 function describeAqi(aqi) {
-  if (aqi <= 50) return { label: 'Good', color: 'text-emerald-400' };
-  if (aqi <= 100) return { label: 'Moderate', color: 'text-yellow-400' };
-  if (aqi <= 150) return { label: 'Unhealthy (Sensitive)', color: 'text-orange-400' };
-  if (aqi <= 200) return { label: 'Unhealthy', color: 'text-red-400' };
-  if (aqi <= 300) return { label: 'Very Unhealthy', color: 'text-purple-400' };
-  return { label: 'Hazardous', color: 'text-red-700' };
+  if (aqi <= 50) return { label: 'Good', color: 'text-good' };
+  if (aqi <= 100) return { label: 'Moderate', color: 'text-warn' };
+  if (aqi <= 150) return { label: 'Unhealthy (Sensitive)', color: 'text-warn' };
+  if (aqi <= 200) return { label: 'Unhealthy', color: 'text-bad' };
+  if (aqi <= 300) return { label: 'Very Unhealthy', color: 'text-primary' };
+  return { label: 'Hazardous', color: 'text-bad' };
 }
 
 // Standard UV index scale.
 function describeUv(uv) {
-  if (uv <= 2) return { label: 'Low', color: 'text-emerald-400' };
-  if (uv <= 5) return { label: 'Moderate', color: 'text-yellow-400' };
-  if (uv <= 7) return { label: 'High', color: 'text-orange-400' };
-  if (uv <= 10) return { label: 'Very High', color: 'text-red-400' };
-  return { label: 'Extreme', color: 'text-purple-400' };
+  if (uv <= 2) return { label: 'Low', color: 'text-good' };
+  if (uv <= 5) return { label: 'Moderate', color: 'text-warn' };
+  if (uv <= 7) return { label: 'High', color: 'text-warn' };
+  if (uv <= 10) return { label: 'Very High', color: 'text-bad' };
+  return { label: 'Extreme', color: 'text-primary' };
 }
 
-const WEATHER_STAT_LABEL_CLASS = 'text-[10px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-1.5';
+const WEATHER_STAT_LABEL_CLASS = 'text-xs font-medium text-muted mb-1.5';
 const WEATHER_STAT_VALUE_CLASS = 'text-xl font-semibold tracking-tight';
 
 function getGreeting() {
@@ -59,7 +59,7 @@ function getGreeting() {
 
 function GlassCard({ children, className = '' }) {
   return (
-    <div className={`bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[28px] p-6 ${className}`}>
+    <div className={`bg-surface border border-line rounded-3xl p-6 shadow-[0_1px_2px_rgba(30,27,58,0.04),0_8px_24px_-12px_rgba(30,27,58,0.10)] ${className}`}>
       {children}
     </div>
   );
@@ -135,25 +135,25 @@ function WeatherCard() {
 
   return (
     <GlassCard>
-      <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Weather</h3>
-      {weather.status === 'loading' && <p className="text-neutral-500 text-sm italic">Loading...</p>}
-      {weather.status === 'error' && <p className="text-neutral-500 text-sm">{weather.message}</p>}
+      <h3 className="text-base font-semibold text-ink mb-3">Weather</h3>
+      {weather.status === 'loading' && <p className="text-muted text-sm italic">Loading...</p>}
+      {weather.status === 'error' && <p className="text-muted text-sm">{weather.message}</p>}
       {weather.status === 'ready' && (
         <>
           <div className="flex items-center gap-3">
             <span className="text-4xl">{weather.emoji}</span>
             <div>
               <p className="text-2xl font-semibold tracking-tight">{weather.temp}°C</p>
-              <p className="text-sm text-neutral-400">{weather.label}</p>
+              <p className="text-sm text-muted">{weather.label}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-4 mt-5 pt-4 border-t border-white/10">
+          <div className="grid grid-cols-4 gap-4 mt-5 pt-4 border-t border-line">
             {weather.aqi != null && (
               <div>
                 <p className={WEATHER_STAT_LABEL_CLASS}>AQI</p>
                 <p className={`${WEATHER_STAT_VALUE_CLASS} ${describeAqi(weather.aqi).color}`}>{weather.aqi}</p>
-                <p className="text-xs text-neutral-500 mt-0.5">{describeAqi(weather.aqi).label}</p>
+                <p className="text-xs text-muted mt-0.5">{describeAqi(weather.aqi).label}</p>
               </div>
             )}
 
@@ -165,7 +165,7 @@ function WeatherCard() {
             <div>
               <p className={WEATHER_STAT_LABEL_CLASS}>Wind</p>
               <p className={WEATHER_STAT_VALUE_CLASS}>
-                {weather.windSpeed} <span className="text-sm font-normal text-neutral-400">km/h</span>
+                {weather.windSpeed} <span className="text-sm font-normal text-muted">km/h</span>
               </p>
             </div>
 
@@ -173,7 +173,7 @@ function WeatherCard() {
               <div>
                 <p className={WEATHER_STAT_LABEL_CLASS}>UV Index</p>
                 <p className={`${WEATHER_STAT_VALUE_CLASS} ${describeUv(weather.uvIndex).color}`}>{Math.round(weather.uvIndex)}</p>
-                <p className="text-xs text-neutral-500 mt-0.5">{describeUv(weather.uvIndex).label}</p>
+                <p className="text-xs text-muted mt-0.5">{describeUv(weather.uvIndex).label}</p>
               </div>
             )}
           </div>
@@ -316,39 +316,39 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
     <div className="space-y-3 mb-4">
       <div className="grid grid-cols-3 gap-3">
         <label className="block">
-          <span className="text-xs text-neutral-500">Height (cm)</span>
+          <span className="text-xs text-muted">Height (cm)</span>
           <input
             type="number"
             value={heightCm}
             onChange={e => setHeightCm(e.target.value)}
             placeholder="175"
-            className="mt-1 w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
+            className="mt-1 w-full bg-tint border border-line rounded-xl px-3 py-2 text-sm text-ink placeholder-muted/60 focus:outline-none focus:border-primary"
           />
         </label>
         <label className="block">
-          <span className="text-xs text-neutral-500">Weight (kg)</span>
+          <span className="text-xs text-muted">Weight (kg)</span>
           <input
             type="number"
             value={weightKg}
             onChange={e => setWeightKg(e.target.value)}
             placeholder="70"
-            className="mt-1 w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
+            className="mt-1 w-full bg-tint border border-line rounded-xl px-3 py-2 text-sm text-ink placeholder-muted/60 focus:outline-none focus:border-primary"
           />
         </label>
         <label className="block">
-          <span className="text-xs text-neutral-500">Age</span>
+          <span className="text-xs text-muted">Age</span>
           <input
             type="number"
             value={age}
             onChange={e => setAge(e.target.value)}
             placeholder="28"
-            className="mt-1 w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-white/30"
+            className="mt-1 w-full bg-tint border border-line rounded-xl px-3 py-2 text-sm text-ink placeholder-muted/60 focus:outline-none focus:border-primary"
           />
         </label>
       </div>
 
       <div>
-        <span className="text-xs text-neutral-500 mb-1.5 block">Sex</span>
+        <span className="text-xs text-muted mb-1.5 block">Sex</span>
         <div className="flex gap-2">
           {SEXES.map(s => (
             <button
@@ -356,8 +356,8 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
               onClick={() => setSex(s.id)}
               className={`flex-1 text-xs font-medium py-2 rounded-full border transition-colors ${
                 sex === s.id
-                  ? 'bg-white text-black border-white'
-                  : 'bg-white/[0.03] border-white/10 text-neutral-300 hover:bg-white/[0.07]'
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-surface border-line text-ink hover:bg-primary-soft'
               }`}
             >
               {s.label}
@@ -367,7 +367,7 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
       </div>
 
       <div>
-        <span className="text-xs text-neutral-500 mb-1.5 block">Goal</span>
+        <span className="text-xs text-muted mb-1.5 block">Goal</span>
         <div className="flex gap-2">
           {GOALS.map(g => (
             <button
@@ -375,8 +375,8 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
               onClick={() => setGoal(g.id)}
               className={`flex-1 text-xs font-medium py-2 rounded-full border transition-colors ${
                 goal === g.id
-                  ? 'bg-white text-black border-white'
-                  : 'bg-white/[0.03] border-white/10 text-neutral-300 hover:bg-white/[0.07]'
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-surface border-line text-ink hover:bg-primary-soft'
               }`}
             >
               {g.label}
@@ -386,7 +386,7 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
       </div>
 
       <div>
-        <span className="text-xs text-neutral-500 mb-1.5 block">Diet</span>
+        <span className="text-xs text-muted mb-1.5 block">Diet</span>
         <div className="flex gap-2">
           {DIETS.map(d => (
             <button
@@ -394,8 +394,8 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
               onClick={() => { setDiet(d.id); if (d.id === 'NON_VEG') setEatsEggs(null); }}
               className={`flex-1 text-xs font-medium py-2 rounded-full border transition-colors ${
                 diet === d.id
-                  ? 'bg-white text-black border-white'
-                  : 'bg-white/[0.03] border-white/10 text-neutral-300 hover:bg-white/[0.07]'
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-surface border-line text-ink hover:bg-primary-soft'
               }`}
             >
               {d.label}
@@ -406,7 +406,7 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
 
       {diet === 'VEG' && (
         <div>
-          <span className="text-xs text-neutral-500 mb-1.5 block">Do you eat eggs?</span>
+          <span className="text-xs text-muted mb-1.5 block">Do you eat eggs?</span>
           <div className="flex gap-2">
             {[{ id: true, label: 'Yes' }, { id: false, label: 'No' }].map(opt => (
               <button
@@ -414,8 +414,8 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
                 onClick={() => setEatsEggs(opt.id)}
                 className={`flex-1 text-xs font-medium py-2 rounded-full border transition-colors ${
                   eatsEggs === opt.id
-                    ? 'bg-white text-black border-white'
-                    : 'bg-white/[0.03] border-white/10 text-neutral-300 hover:bg-white/[0.07]'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-surface border-line text-ink hover:bg-primary-soft'
                 }`}
               >
                 {opt.label}
@@ -432,14 +432,14 @@ function FitnessProfileForm({ initial, onSave, onCancel }) {
             heightCm: Number(heightCm), weightKg: Number(weightKg), age: Number(age), sex, goal, diet,
             eatsEggs: diet === 'VEG' ? eatsEggs : null,
           })}
-          className="flex-1 py-2 rounded-full text-sm font-semibold bg-white text-black hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 py-2 rounded-full text-sm font-semibold bg-primary text-white hover:bg-primary-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Save
         </button>
         {onCancel && (
           <button
             onClick={onCancel}
-            className="py-2 px-4 rounded-full text-sm font-medium text-neutral-400 hover:text-neutral-200 transition-colors"
+            className="py-2 px-4 rounded-full text-sm font-medium text-muted hover:text-ink transition-colors"
           >
             Cancel
           </button>
@@ -456,25 +456,25 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-neutral-950 border border-white/10 rounded-[28px] p-6 max-h-[80vh] flex flex-col"
+        className="w-full max-w-md bg-surface border border-line rounded-[28px] p-6 max-h-[80vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4 shrink-0">
-          <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">Height &amp; Weight Timeline</h3>
-          <button onClick={onClose} aria-label="Close" className="text-neutral-500 hover:text-white text-lg leading-none transition-colors">
+          <h3 className="text-lg font-semibold text-ink">Height and weight history</h3>
+          <button onClick={onClose} aria-label="Close" className="text-muted hover:text-ink text-lg leading-none transition-colors">
             &times;
           </button>
         </div>
 
         <div className="space-y-2 overflow-y-auto pr-1 -mr-1 flex-1 min-h-0">
-          <div className="flex items-center justify-between text-sm bg-white/[0.07] border border-white/10 rounded-2xl px-4 py-3">
+          <div className="flex items-center justify-between text-sm bg-primary-soft border border-line rounded-2xl px-4 py-3">
             <div>
-              <p className="text-white font-medium">Current</p>
-              <p className="text-neutral-400 text-xs mt-0.5">
+              <p className="text-ink font-medium">Current</p>
+              <p className="text-muted text-xs mt-0.5">
                 {profile.heightCm}cm &middot; {profile.weightKg}kg &middot; BMI {currentBmi.toFixed(1)}
               </p>
             </div>
@@ -486,17 +486,17 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
             return (
               <div
                 key={entry.id}
-                className="flex items-center justify-between text-sm bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3"
+                className="flex items-center justify-between text-sm bg-tint border border-line rounded-2xl px-4 py-3"
               >
                 <div>
-                  <p className="text-neutral-300">{new Date(entry.recordedAt).toLocaleString()}</p>
-                  <p className="text-neutral-500 text-xs mt-0.5">
+                  <p className="text-ink">{new Date(entry.recordedAt).toLocaleString()}</p>
+                  <p className="text-muted text-xs mt-0.5">
                     {entry.heightCm}cm &middot; {entry.weightKg}kg &middot; BMI {entryBmi.toFixed(1)}
                   </p>
                 </div>
                 <button
                   onClick={() => onDeleteEntry(entry.id)}
-                  className="text-xs text-neutral-500 hover:text-white transition-colors shrink-0"
+                  className="text-xs text-muted hover:text-ink transition-colors shrink-0"
                 >
                   Delete
                 </button>
@@ -506,22 +506,22 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
         </div>
 
         {history.length === 0 ? (
-          <p className="text-neutral-500 text-sm mt-3 shrink-0">No past entries yet - use "Record New Stats" to add to the timeline.</p>
+          <p className="text-muted text-sm mt-3 shrink-0">No past entries yet - use "Record new stats" to add to the timeline.</p>
         ) : (
-          <div className="pt-4 mt-4 border-t border-white/10 shrink-0">
+          <div className="pt-4 mt-4 border-t border-line shrink-0">
             {confirmingClear ? (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-neutral-500">Delete all {history.length} past entries?</span>
+                <span className="text-xs text-muted">Delete all {history.length} past entries?</span>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setConfirmingClear(false)}
-                    className="text-xs text-neutral-500 hover:text-white transition-colors"
+                    className="text-xs text-muted hover:text-ink transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={() => { onClearAll(); setConfirmingClear(false); }}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    className="text-xs text-bad hover:text-bad transition-colors"
                   >
                     Confirm Clear All
                   </button>
@@ -530,7 +530,7 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
             ) : (
               <button
                 onClick={() => setConfirmingClear(true)}
-                className="text-xs text-neutral-500 hover:text-white transition-colors"
+                className="text-xs text-muted hover:text-ink transition-colors"
               >
                 Clear All
               </button>
@@ -543,13 +543,13 @@ function TimelineModal({ profile, history, onClose, onDeleteEntry, onClearAll })
 }
 
 const BMI_CATEGORY_COLORS = {
-  Underweight: 'text-amber-300',
-  Normal: 'text-emerald-400',
-  Overweight: 'text-amber-300',
-  Obese: 'text-red-400',
+  Underweight: 'text-warn',
+  Normal: 'text-good',
+  Overweight: 'text-warn',
+  Obese: 'text-bad',
 };
 const PROFILE_ACTION_CLASS =
-  'text-xs font-medium text-neutral-400 border border-white/10 rounded-full px-3 py-1.5 hover:text-white hover:border-white/30 transition-colors';
+  'text-xs font-medium text-muted border border-line rounded-full px-3 py-1.5 hover:text-ink hover:border-line-strong transition-colors';
 
 function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, history, onDeleteHistoryEntry, onClearHistory }) {
   const [showTimeline, setShowTimeline] = useState(false);
@@ -570,10 +570,10 @@ function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, h
           { label: 'Goal', value: goalLabel, sub: `${profile.age} yrs \u00b7 ${sexLabel}` },
           { label: 'Diet', value: dietLabel(profile).split(' (')[0], sub: (dietLabel(profile).match(/\((.*)\)/) || [])[1] || '' },
         ].map(tile => (
-          <div key={tile.label} className="bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-500">{tile.label}</p>
-            <p className="text-lg font-semibold tracking-tight text-white mt-0.5 truncate">{tile.value}</p>
-            <p className={`text-xs truncate ${tile.subClass || 'text-neutral-500'}`}>{tile.sub || '\u00a0'}</p>
+          <div key={tile.label} className="bg-tint border border-line rounded-2xl px-4 py-3 min-w-0">
+            <p className="text-xs font-medium text-muted">{tile.label}</p>
+            <p className="text-lg font-semibold tracking-tight text-ink mt-0.5 truncate">{tile.value}</p>
+            <p className={`text-xs truncate ${tile.subClass || 'text-muted'}`}>{tile.sub || '\u00a0'}</p>
           </div>
         ))}
       </div>
@@ -582,19 +582,19 @@ function FitnessProfileSummary({ profile, onEdit, onRecordNew, onClearProfile, h
       <div className="flex flex-wrap items-center justify-end gap-2 mt-3">
         {confirmingClearProfile ? (
           <>
-            <span className="text-xs text-neutral-500 mr-1">Clear your profile?</span>
+            <span className="text-xs text-muted mr-1">Clear your profile?</span>
             <button onClick={() => setConfirmingClearProfile(false)} className={PROFILE_ACTION_CLASS}>Cancel</button>
             <button
               onClick={() => { onClearProfile(); setConfirmingClearProfile(false); }}
-              className="text-xs font-medium text-red-300 border border-red-400/30 rounded-full px-3 py-1.5 hover:bg-red-500/10 transition-colors"
+              className="text-xs font-medium text-bad border border-bad/30 rounded-full px-3 py-1.5 hover:bg-bad-soft transition-colors"
             >
               Confirm Clear
             </button>
           </>
         ) : (
           <>
-            <button onClick={() => setShowTimeline(true)} className={PROFILE_ACTION_CLASS}>View Timeline</button>
-            <button onClick={onRecordNew} className={PROFILE_ACTION_CLASS}>Record New Stats</button>
+            <button onClick={() => setShowTimeline(true)} className={PROFILE_ACTION_CLASS}>View history</button>
+            <button onClick={onRecordNew} className={PROFILE_ACTION_CLASS}>Record new stats</button>
             <button onClick={onEdit} className={PROFILE_ACTION_CLASS}>Edit</button>
             <button onClick={() => setConfirmingClearProfile(true)} className={PROFILE_ACTION_CLASS}>Clear</button>
           </>
@@ -753,7 +753,7 @@ function GeneratePlanButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full py-2.5 rounded-full text-sm font-semibold bg-white text-black hover:bg-neutral-200 transition-colors"
+      className="w-full py-2.5 rounded-full text-sm font-semibold bg-primary text-white hover:bg-primary-deep transition-colors"
     >
       Generate My Plan
     </button>
@@ -763,9 +763,9 @@ function GeneratePlanButton({ onClick }) {
 function SourcesFooter({ sources }) {
   if (!sources || sources.length === 0) return null;
   return (
-    <div className="pt-3 mt-3 border-t border-white/10">
-      <p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-1.5">Sources</p>
-      <ul className="text-xs text-neutral-500 space-y-0.5">
+    <div className="pt-3 mt-3 border-t border-line">
+      <p className="text-xs font-medium text-muted mb-1.5">Sources</p>
+      <ul className="text-xs text-muted space-y-0.5">
         {sources.map((source, i) => <li key={i}>{source}</li>)}
       </ul>
     </div>
@@ -796,16 +796,16 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
 
   const tabClass = active =>
     `px-5 py-2 rounded-full text-sm font-semibold transition-colors ${
-      active ? 'bg-white text-black' : 'text-neutral-400 hover:text-white'
+      active ? 'bg-primary text-white' : 'text-muted hover:text-ink'
     }`;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-xl p-4 sm:p-8"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/30 backdrop-blur-xl p-4 sm:p-8"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-5xl h-[90vh] bg-neutral-950/95 border border-white/10 rounded-[32px] p-6 sm:p-8 flex flex-col shadow-2xl"
+        className="w-full max-w-5xl h-[90vh] bg-surface border border-line rounded-[32px] p-6 sm:p-8 flex flex-col shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Title + close button */}
@@ -814,7 +814,7 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="w-10 h-10 rounded-full bg-white/[0.06] hover:bg-white/15 text-neutral-300 hover:text-white text-xl leading-none transition-colors"
+            className="w-10 h-10 rounded-full bg-primary-soft hover:bg-primary-soft text-ink hover:text-ink text-xl leading-none transition-colors"
           >
             &times;
           </button>
@@ -822,7 +822,7 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
 
         {/* Today / Full week switch + optional header (e.g. calorie target) */}
         <div className="flex flex-wrap items-center gap-4 mb-5 shrink-0">
-          <div className="flex gap-1 bg-white/[0.05] border border-white/10 rounded-full p-1">
+          <div className="flex gap-1 bg-tint border border-line rounded-full p-1">
             <button className={tabClass(view === 'today')} onClick={() => setView('today')}>Today</button>
             <button className={tabClass(view === 'week')} onClick={() => setView('week')}>Full week</button>
           </div>
@@ -831,7 +831,7 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
 
         {/* Scrollable days: one column for today, a 2-column grid for the week */}
         <div
-          className={`overflow-y-auto flex-1 min-h-0 pr-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent] ${
+          className={`overflow-y-auto flex-1 min-h-0 pr-2  ${
             view === 'week' ? 'grid grid-cols-1 md:grid-cols-2 gap-3 content-start' : 'space-y-3'
           }`}
         >
@@ -839,11 +839,11 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
             <div
               key={day.day}
               className={`border rounded-2xl px-5 py-4 ${
-                day.day === today.day ? 'bg-white/[0.08] border-white/20' : 'bg-white/[0.03] border-white/5'
+                day.day === today.day ? 'bg-surface border-primary/40' : 'bg-tint border-line'
               }`}
             >
               <p className="text-base font-semibold mb-2">
-                {day.day}{day.day === today.day ? ' (Today)' : ''}
+                {day.day}{day.day === today.day && <span className="ml-2 align-middle text-xs font-semibold text-primary bg-primary-soft rounded-full px-2 py-0.5">Today</span>}
               </p>
               {renderDay(day)}
             </div>
@@ -858,16 +858,115 @@ function PlanModal({ title, plan, renderDay, header, onClose }) {
     document.body
   );
 }
+// Correct-form guide for every plannable exercise, from GET /form-guide
+// (form_reference.py). Fetched once per page load and shared by every day.
+let formGuidePromise = null;
+function useFormGuide(enabled) {
+  const [guide, setGuide] = useState(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    if (!formGuidePromise) {
+      formGuidePromise = fetch('http://localhost:8000/form-guide')
+        .then(res => (res.ok ? res.json() : null))
+        .catch(() => null)
+        .then(data => {
+          if (!data) formGuidePromise = null; // allow a retry next time
+          return data;
+        });
+    }
+    formGuidePromise.then(data => { if (alive) setGuide(data); });
+    return () => { alive = false; };
+  }, [enabled]);
+  return guide;
+}
+
+function GuideList({ title, items, numbered = false }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted mb-1">{title}</p>
+      <ul className="space-y-1">
+        {items.map((item, i) => (
+          <li key={i} className="flex gap-2 text-sm text-ink leading-snug">
+            {numbered
+              ? <span className="shrink-0 text-xs text-muted tabular-nums w-4">{i + 1}.</span>
+              : <span className="mt-[0.55em] w-1 h-1 shrink-0 rounded-full bg-line-strong" />}
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// The "How to do it" panel under an exercise in the workout plan pop-up.
+function FormGuidePanel({ entry, loaded }) {
+  if (!entry) {
+    return (
+      <p className="text-xs text-muted py-2 ml-8">
+        {loaded ? 'No form guide for this exercise yet.' : 'Form guide unavailable - is the AI Engine running?'}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2 mb-1 ml-8 space-y-3 bg-tint border border-line rounded-2xl px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+          entry.tracked
+            ? 'bg-good-soft text-good border-good/20'
+            : 'bg-tint text-muted border-line'
+        }`}>
+          {entry.tracked ? 'Camera-checked' : 'Not camera-checked yet'}
+        </span>
+        <span className="text-xs text-muted">{entry.muscles}</span>
+      </div>
+      {entry.video && (
+        <a
+          href={entry.video}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-ink bg-sun hover:bg-sun-deep rounded-full px-4 py-2 transition-colors"
+        >
+          {'\u25b6'} Watch the correct form
+          <span className="text-[11px] font-normal text-ink/60">MuscleWiki {'\u2197'}</span>
+        </a>
+      )}
+      <GuideList title="Set up" items={entry.setup} />
+      <GuideList title="Do it" items={entry.execution} numbered />
+      <p className="text-sm text-ink"><span className="text-muted">Breathing: </span>{entry.breathing}</p>
+      <GuideList title="Avoid" items={entry.mistakes} />
+      {entry.checkpoints && entry.checkpoints.length > 0 && (
+        <details className="text-xs text-muted">
+          <summary className="cursor-pointer hover:text-ink">For the curious: what the camera checks</summary>
+          <ul className="mt-1 space-y-0.5 pl-3">
+            {entry.checkpoints.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </details>
+      )}
+      <p className="text-[11px] text-muted">
+        {entry.sources && entry.sources.length
+          ? `Sources: ${entry.sources.join('; ')}`
+          : 'Standard technique coaching (no specific manual page).'}
+      </p>
+    </div>
+  );
+}
+
 // One day of the workout plan. compact = the short dashboard-card version.
+// In the full version every exercise expands to show its correct form.
 function WorkoutDay({ day, compact = false }) {
+  const guide = useFormGuide(!compact && !day.workout.is_rest);
+  const [openIndex, setOpenIndex] = useState(null);
+
   if (day.workout.is_rest) {
     return (
       <div>
-        <span className="inline-block text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+        <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-good-soft text-good border border-good/20">
           Rest day
         </span>
         {!compact && day.notes && (
-          <p className="text-xs text-neutral-400 mt-3 pl-3 border-l-2 border-white/15">{day.notes}</p>
+          <p className="text-xs text-muted mt-3 pl-3 border-l-2 border-line-strong">{day.notes}</p>
         )}
       </div>
     );
@@ -877,26 +976,49 @@ function WorkoutDay({ day, compact = false }) {
   const shown = compact ? exercises.slice(0, 4) : exercises;
   return (
     <div>
-      <ul className="divide-y divide-white/5">
-        {shown.map((ex, i) => (
-          <li key={i} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
-            <span className="flex items-center gap-3 min-w-0">
-              <span className="w-5 h-5 shrink-0 rounded-full bg-white/10 text-[10px] font-semibold text-neutral-300 flex items-center justify-center">
-                {i + 1}
+      <ul className="divide-y divide-line">
+        {shown.map((ex, i) => {
+          const row = (
+            <>
+              <span className="flex items-center gap-3 min-w-0">
+                <span className="w-6 h-6 shrink-0 rounded-full bg-primary-soft text-[11px] font-semibold text-primary flex items-center justify-center">
+                  {i + 1}
+                </span>
+                <span className="text-sm text-ink truncate">{ex.name}</span>
+                {!compact && (
+                  <span className="shrink-0 text-[11px] text-muted">
+                    {openIndex === i ? 'Hide form \u25b4' : 'How to do it \u25be'}
+                  </span>
+                )}
               </span>
-              <span className="text-sm text-neutral-200 truncate">{ex.name}</span>
-            </span>
-            <span className="shrink-0 text-xs font-semibold tabular-nums text-white bg-white/10 rounded-full px-2.5 py-1">
-              {ex.sets_reps.replace('x', ' \u00d7 ')}
-            </span>
-          </li>
-        ))}
+              <span className="shrink-0 text-xs font-semibold tabular-nums text-ink bg-sun/40 rounded-full px-2.5 py-1">
+                {ex.sets_reps.replace('x', ' \u00d7 ')}
+              </span>
+            </>
+          );
+          return (
+            <li key={i} className="py-2 first:pt-0 last:pb-0">
+              {compact ? (
+                <div className="flex items-center justify-between gap-3">{row}</div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setOpenIndex(openIndex === i ? null : i)}
+                  className="w-full flex items-center justify-between gap-3 text-left hover:opacity-80 transition-opacity"
+                >
+                  {row}
+                </button>
+              )}
+              {!compact && openIndex === i && <FormGuidePanel entry={guide && guide[ex.name]} loaded={!!guide} />}
+            </li>
+          );
+        })}
       </ul>
       {compact && exercises.length > shown.length && (
-        <p className="text-xs text-neutral-500 mt-2">+{exercises.length - shown.length} more</p>
+        <p className="text-xs text-muted mt-2">+{exercises.length - shown.length} more</p>
       )}
       {!compact && day.notes && (
-        <p className="text-xs text-neutral-400 mt-3 pl-3 border-l-2 border-white/15">{day.notes}</p>
+        <p className="text-xs text-muted mt-3 pl-3 border-l-2 border-line-strong">{day.notes}</p>
       )}
     </div>
   );
@@ -938,17 +1060,17 @@ function splitIngredients(text) {
 // the pop-up lists every ingredient on its own line.
 function MealDay({ day, compact = false }) {
   return (
-    <ul className="divide-y divide-white/5">
+    <ul className="divide-y divide-line">
       {MEALS.map(meal => (
         <li key={meal.key} className="py-2 first:pt-0 last:pb-0">
-          <p className="text-sm font-semibold text-white">{meal.label}</p>
+          <p className="text-sm font-semibold text-ink">{meal.label}</p>
           {compact ? (
-            <p className="text-sm text-neutral-400 leading-snug mt-0.5 line-clamp-1">{day.meals[meal.key]}</p>
+            <p className="text-sm text-muted leading-snug mt-0.5 line-clamp-1">{day.meals[meal.key]}</p>
           ) : (
             <ul className="mt-1 space-y-0.5">
               {splitIngredients(day.meals[meal.key]).map((item, i) => (
-                <li key={i} className="flex gap-2 text-sm text-neutral-300 leading-snug">
-                  <span className="mt-[0.55em] w-1 h-1 shrink-0 rounded-full bg-neutral-500" />
+                <li key={i} className="flex gap-2 text-sm text-ink leading-snug">
+                  <span className="mt-[0.55em] w-1 h-1 shrink-0 rounded-full bg-line-strong" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -964,12 +1086,12 @@ function MealDay({ day, compact = false }) {
 function PlanStatus({ planState }) {
   if (planState.status === 'idle') return <GeneratePlanButton onClick={planState.generate} />;
   if (planState.status === 'loading') {
-    return <p className="text-neutral-500 text-sm italic">Building your personalized plan with AI - this can take up to 30s...</p>;
+    return <p className="text-muted text-sm italic">Building your personalized plan with AI - this can take up to 30s...</p>;
   }
   return (
     <div className="space-y-2">
-      <p className="text-neutral-500 text-sm">Couldn't generate a plan - is the AI Engine running?</p>
-      <button onClick={planState.generate} className="text-xs text-white underline">Try again</button>
+      <p className="text-muted text-sm">Couldn't generate a plan - is the AI Engine running?</p>
+      <button onClick={planState.generate} className="text-xs text-ink underline">Try again</button>
     </div>
   );
 }
@@ -979,11 +1101,11 @@ function TodayPreview({ day, onOpen, children }) {
   return (
     <button
       onClick={onOpen}
-      className="w-full text-left bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 hover:bg-white/[0.07] hover:border-white/15 transition-colors"
+      className="w-full text-left bg-tint border border-line rounded-2xl px-4 py-3 hover:bg-primary-soft hover:border-line-strong transition-colors"
     >
-      <p className="text-sm font-semibold mb-1.5">{day.day} (Today)</p>
+      <p className="text-sm font-semibold mb-2">{day.day}</p>
       {children}
-      <p className="text-xs text-neutral-500 mt-2">Click to view today or the full week &rarr;</p>
+      <p className="text-sm font-medium text-primary mt-3">Open the full week</p>
     </button>
   );
 }
@@ -999,13 +1121,13 @@ function WorkoutPlanContent({ planState }) {
         <WorkoutDay day={today} compact />
       </TodayPreview>
       <div className="flex justify-end">
-        <button onClick={planState.generate} className="text-xs text-neutral-500 hover:text-white transition-colors">
+        <button onClick={planState.generate} className="text-xs text-muted hover:text-ink transition-colors">
           ↻ Regenerate
         </button>
       </div>
       {open && (
         <PlanModal
-          title="Workout Plan"
+          title="Your workout plan"
           plan={planState.plan}
           renderDay={day => <WorkoutDay day={day} />}
           onClose={() => setOpen(false)}
@@ -1022,7 +1144,7 @@ function MealPlanContent({ planState }) {
   const plan = planState.plan;
   const today = todaysPlanDay(plan);
   const target = plan.dailyCalories != null && (
-    <p className="text-xs text-neutral-500">
+    <p className="text-xs text-muted">
       Daily target: ~{plan.dailyCalories} kcal &middot; ~{plan.dailyProteinG}g protein
     </p>
   );
@@ -1034,7 +1156,7 @@ function MealPlanContent({ planState }) {
       </TodayPreview>
       {open && (
         <PlanModal
-          title="Meal Plan"
+          title="Your meal plan"
           plan={plan}
           header={target}
           renderDay={day => <MealDay day={day} />}
@@ -1053,7 +1175,7 @@ function FormattedText({ text }) {
     const content = isBullet ? line.replace(/^\s*[*-]\s+/, '') : line;
     const parts = content.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
       part.startsWith('**') && part.endsWith('**') && part.length > 4
-        ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+        ? <strong key={j} className="text-ink font-semibold">{part.slice(2, -2)}</strong>
         : part
     );
     return (
@@ -1214,26 +1336,26 @@ function ChatCard({ onWorkoutPlan, onMealPlan }) {
   return (
     <GlassCard className="flex flex-col h-[34rem]">
       {/* Header */}
-      <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/10 shrink-0">
-        <div className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-sm font-bold">&#10022;</div>
+      <div className="flex items-center gap-3 pb-4 mb-4 border-b border-line shrink-0">
+        <div className="w-10 h-10 rounded-2xl bg-sun text-ink flex items-center justify-center text-base font-bold" aria-hidden="true">&#10022;</div>
         <div>
-          <h3 className="text-sm font-semibold text-white">GymBro</h3>
-          <p className="text-xs text-neutral-500">Ask about your plan, meals, form or past reports</p>
+          <h3 className="text-sm font-semibold text-ink">GymBro</h3>
+          <p className="text-xs text-muted">Ask about your plan, meals, form or past reports</p>
         </div>
       </div>
 
       {/* Messages - the only part that scrolls */}
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.2)_transparent]"
+        className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1 "
       >
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[88%] ${
                 m.role === 'user'
-                  ? 'bg-white text-black rounded-br-md whitespace-pre-wrap'
-                  : 'bg-white/[0.05] border border-white/10 text-neutral-200 rounded-bl-md'
+                  ? 'bg-primary text-white rounded-br-md whitespace-pre-wrap'
+                  : 'bg-tint border border-line text-ink rounded-bl-md'
               }`}
             >
               {m.role === 'assistant' ? <FormattedText text={m.text} /> : m.text}
@@ -1248,7 +1370,7 @@ function ChatCard({ onWorkoutPlan, onMealPlan }) {
               <button
                 key={q}
                 onClick={() => sendMessage(q)}
-                className="text-xs text-neutral-300 border border-white/15 rounded-full px-3 py-1.5 hover:bg-white/10 hover:text-white transition-colors"
+                className="text-xs text-ink border border-line-strong rounded-full px-3 py-1.5 hover:bg-primary-soft hover:text-ink transition-colors"
               >
                 {q}
               </button>
@@ -1259,14 +1381,14 @@ function ChatCard({ onWorkoutPlan, onMealPlan }) {
         {/* Typing indicator */}
         {status !== 'idle' && (
           <div className="flex justify-start">
-            <div className="bg-white/[0.05] border border-white/10 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
+            <div className="bg-tint border border-line rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
               {status === 'connecting' ? (
-                <span className="text-xs text-neutral-500">Connecting...</span>
+                <span className="text-xs text-muted">Connecting...</span>
               ) : (
                 [0, 150, 300].map(delay => (
                   <span
                     key={delay}
-                    className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce"
+                    className="w-1.5 h-1.5 rounded-full bg-muted animate-bounce"
                     style={{ animationDelay: `${delay}ms` }}
                   />
                 ))
@@ -1277,20 +1399,20 @@ function ChatCard({ onWorkoutPlan, onMealPlan }) {
       </div>
 
       {/* Text box - always visible at the bottom of the card */}
-      <div className="flex items-center gap-2 mt-4 shrink-0 bg-white/[0.04] border border-white/10 rounded-full pl-4 pr-1.5 py-1.5 focus-within:border-white/30 transition-colors">
+      <div className="flex items-center gap-2 mt-4 shrink-0 bg-tint border border-line rounded-full pl-4 pr-1.5 py-1.5 focus-within:border-primary transition-colors">
         <input
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Message GymBro..."
-          className="flex-1 bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none"
+          className="flex-1 bg-transparent text-sm text-ink placeholder-muted/60 focus:outline-none"
         />
         <button
           onClick={sendMessage}
           disabled={!input.trim() || status !== 'idle'}
           aria-label="Send message"
-          className="w-8 h-8 shrink-0 rounded-full bg-white text-black flex items-center justify-center disabled:bg-white/10 disabled:text-neutral-500 disabled:cursor-not-allowed transition-colors"
+          className="w-9 h-9 shrink-0 rounded-full bg-primary text-white hover:bg-primary-deep flex items-center justify-center disabled:bg-line disabled:text-muted disabled:cursor-not-allowed transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 19V5M5 12l7-7 7 7" />
@@ -1340,30 +1462,30 @@ function PastReportsCard() {
   return (
     <GlassCard>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em]">Past Injury Reports</h3>
+        <h3 className="text-lg font-semibold text-ink">Your form reports</h3>
         <button
           onClick={loadReports}
           aria-label="Refresh reports"
-          className="text-neutral-500 hover:text-white text-xs transition-colors"
+          className="text-muted hover:text-ink text-xs transition-colors"
         >
           ↻ Refresh
         </button>
       </div>
 
-      {status === 'loading' && <p className="text-neutral-500 text-sm italic">Loading...</p>}
+      {status === 'loading' && <p className="text-muted text-sm italic">Loading...</p>}
       {status === 'error' && (
-        <p className="text-neutral-500 text-sm">Couldn't reach the AI Engine to load reports.</p>
+        <p className="text-muted text-sm">Couldn't reach the AI Engine to load reports.</p>
       )}
       {status === 'ready' && reports.length === 0 && (
-        <p className="text-neutral-500 text-sm">No reports generated yet - they'll show up here after a workout.</p>
+        <p className="text-muted text-sm">No reports generated yet - they'll show up here after a workout.</p>
       )}
       {status === 'ready' && reports.length > 0 && (
         <div className="space-y-2 max-h-80 overflow-y-auto pr-1 -mr-1">
           {reports.map(report => (
-            <div key={report.filename} className="flex items-center justify-between gap-3 bg-white/[0.03] border border-white/5 rounded-2xl px-4 py-3 hover:bg-white/[0.05] transition-colors">
+            <div key={report.filename} className="flex items-center justify-between gap-3 bg-tint border border-line rounded-2xl px-4 py-3 hover:bg-primary-soft transition-colors">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-white">Workout report</p>
-                <p className="text-xs text-neutral-500 mt-0.5">
+                <p className="text-sm font-medium text-ink">Workout report</p>
+                <p className="text-xs text-muted mt-0.5">
                   {new Date(report.created_at * 1000).toLocaleString(undefined, {
                     weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
                   })}
@@ -1371,9 +1493,9 @@ function PastReportsCard() {
               </div>
               <button
                 onClick={() => downloadReport(report.filename)}
-                className="shrink-0 text-xs font-semibold text-white border border-white/15 rounded-full px-3.5 py-1.5 hover:bg-white hover:text-black transition-colors"
+                className="shrink-0 text-xs font-semibold text-primary bg-primary-soft rounded-full px-3.5 py-2 hover:bg-primary hover:text-white transition-colors"
               >
-                &darr; Download
+                Download PDF
               </button>
             </div>
           ))}
@@ -1390,48 +1512,55 @@ function Dashboard({ onStartWorkout }) {
   const [profileMode, setProfileMode] = useState(profile ? null : 'edit');
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans p-6 md:p-10 relative overflow-hidden">
-      {/* Ambient glow, purely decorative */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[700px] rounded-full bg-white/[0.05] blur-[120px]" />
-
-      <div className="max-w-6xl mx-auto relative">
-
-        {/* Welcome header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-semibold tracking-tight">
-            {getGreeting()}
-          </h1>
-          <p className="text-neutral-500 mt-1.5">
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} &middot; Ready to train?
-          </p>
-        </div>
+    <div className="min-h-screen bg-canvas text-ink font-sans px-4 py-6 sm:p-6 md:p-10">
+      <div className="max-w-6xl mx-auto">
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
 
           {/* Main column */}
           <div className="lg:col-span-2 flex flex-col gap-6">
-            {/* Start Workout CTA */}
-            <button
-              onClick={onStartWorkout}
-              className="group w-full rounded-[28px] p-8 text-left bg-white text-black hover:bg-neutral-100 transition-colors duration-300 shadow-[0_0_60px_-15px_rgba(255,255,255,0.25)] flex items-center justify-between gap-6"
-            >
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">Ready when you are</p>
-                <h2 className="text-3xl font-semibold tracking-tight mt-1">Start Workout</h2>
-                <p className="text-neutral-600 mt-1">Track squats, pushups, planks and more with real-time AI form coaching</p>
-                <div className="flex flex-wrap gap-2 mt-4">
-                  {['Live form feedback', 'Voice coaching', 'Rep counting', 'Injury report'].map(tag => (
-                    <span key={tag} className="text-xs font-medium text-neutral-700 bg-black/[0.06] rounded-full px-3 py-1">{tag}</span>
-                  ))}
+            {/* Hero: greeting + the one big action. The only loud element on the page. */}
+            <section className="relative overflow-hidden rounded-[32px] bg-primary text-white p-7 sm:p-9">
+              {/* Soft rings - a nod to a rep-counter dial */}
+              <svg className="pointer-events-none absolute -right-24 -top-24 w-[420px] h-[420px] text-white/10" viewBox="0 0 200 200" aria-hidden="true">
+                <circle cx="100" cy="100" r="96" fill="none" stroke="currentColor" strokeWidth="2" />
+                <circle cx="100" cy="100" r="74" fill="none" stroke="currentColor" strokeWidth="2" />
+                <circle cx="100" cy="100" r="52" fill="none" stroke="currentColor" strokeWidth="2" />
+              </svg>
+              <div className="relative">
+                <p className="text-white/75">
+                  {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                </p>
+                <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight mt-1">
+                  {getGreeting()}
+                </h1>
+                <p className="text-white/85 mt-3 max-w-md text-lg leading-snug">
+                  Your camera watches your form, counts your reps and tells you when to fix something.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-4 mt-7">
+                  <button
+                    onClick={onStartWorkout}
+                    className="group inline-flex items-center gap-3 rounded-full bg-sun hover:bg-sun-deep text-ink font-semibold text-lg pl-7 pr-2 py-2 transition-colors"
+                  >
+                    Start workout
+                    <span className="w-11 h-11 rounded-full bg-ink text-sun flex items-center justify-center transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                    </span>
+                  </button>
+                  <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/85">
+                    {['Live form feedback', 'Voice coaching', 'Injury report'].map(tag => (
+                      <li key={tag} className="flex items-center gap-1.5">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-sun" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+                        {tag}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
-              <span className="shrink-0 w-14 h-14 rounded-full bg-black text-white flex items-center justify-center text-xl transition-transform duration-300 group-hover:translate-x-1">
-                &rarr;
-              </span>
-            </button>
+            </section>
 
             <GlassCard>
-              <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Your Profile</h3>
+              <h3 className="text-lg font-semibold text-ink mb-4">Your profile</h3>
               <FitnessProfileGate
                 profile={profile}
                 updateProfile={updateProfile}
@@ -1447,20 +1576,20 @@ function Dashboard({ onStartWorkout }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <GlassCard>
-                <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Today's Workout</h3>
+                <h3 className="text-lg font-semibold text-ink mb-4">Today's workout</h3>
                 {profile ? (
                   <WorkoutPlanContent planState={workoutPlanState} />
                 ) : (
-                  <p className="text-neutral-500 text-sm">Set up your profile above to see your personalized workout plan.</p>
+                  <p className="text-muted text-sm">Set up your profile above to see your personalized workout plan.</p>
                 )}
               </GlassCard>
 
               <GlassCard>
-                <h3 className="text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.15em] mb-3">Meal Prep</h3>
+                <h3 className="text-lg font-semibold text-ink mb-4">Today's meals</h3>
                 {profile ? (
                   <MealPlanContent planState={mealPlanState} />
                 ) : (
-                  <p className="text-neutral-500 text-sm">Set up your profile above to see your AI-generated meal plan.</p>
+                  <p className="text-muted text-sm">Set up your profile above to see your AI-generated meal plan.</p>
                 )}
               </GlassCard>
             </div>

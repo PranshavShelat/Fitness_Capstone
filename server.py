@@ -12,7 +12,8 @@ from websockets.http11 import Response
 load_dotenv()
 
 from engine import EXERCISES, HOLD_MODES, REP_TRANSITIONS, analyze_frame, new_state
-from db import init_db, log_fault
+from db import init_db, log_fault, update_fault_measured
+from form_reference import fault_metric, guide_payload
 from injury_knowledge import MISHAP_EXPLANATIONS
 from report import generate_report_pdf, REPORTS_DIR
 from plan import generate_workout_plan, generate_meal_plan
@@ -40,6 +41,31 @@ class MockLandmark:
 # mishap (~150-250ms at typical webcam framerates) - filters out single-frame
 # pose-tracking noise so it never gets written into a report as fact.
 FAULT_MIN_STREAK = 5
+
+def _reset_fault_tracking(session):
+    session["fault_candidate"] = None
+    session["fault_streak"] = 0
+    session["fault_logged"] = False
+    session["fault_row"] = None
+    session["fault_rep"] = None
+    session["fault_worst"] = None
+    session["fault_dirty"] = False
+
+
+async def _flush_fault(session):
+    """Writes the worst value seen over the current fault streak to its row."""
+    if session.get("fault_row") and session.get("fault_dirty"):
+        await asyncio.to_thread(update_fault_measured, session["fault_row"], session["fault_worst"])
+        session["fault_dirty"] = False
+
+
+def _worse(current, value, direction):
+    if value is None:
+        return current
+    if current is None:
+        return value
+    return min(current, value) if direction == "min" else max(current, value)
+
 
 async def _send_report(websocket, data):
     try:
@@ -124,6 +150,11 @@ async def process_frame(websocket):
         # lose a half-completed rep, and no exercise can inherit another's stage.
         "states": {}, "mode": None, "last_plank_ts": None,
         "fault_candidate": None, "fault_streak": 0, "fault_logged": False,
+        # Report detail: which rep a fault happened on, and the worst measured
+        # value over the streak (e.g. deepest knee angle) - see _flush_fault.
+        "fault_row": None, "fault_rep": None, "fault_worst": None, "fault_dirty": False,
+        # Completed reps per exercise this connection, for rep_index.
+        "reps": {},
         # Both lazily created on the first chat message - "chat_client" must be kept
         # alive here for as long as "chat" is in use (see create_chat_session).
         "chat": None, "chat_client": None,
@@ -143,6 +174,7 @@ async def process_frame(websocket):
             data = json.loads(message)
 
             if data.get("action") == "generate_report":
+                await _flush_fault(session)
                 _spawn(session, _send_report(websocket, data))
                 continue
 
@@ -170,9 +202,8 @@ async def process_frame(websocket):
             # kept, so returning to an exercise resumes where it left off.
             if session["mode"] is not None and mode != session["mode"]:
                 session["last_plank_ts"] = None
-                session["fault_candidate"] = None
-                session["fault_streak"] = 0
-                session["fault_logged"] = False
+                await _flush_fault(session)
+                _reset_fault_tracking(session)
                 session["coach"].reset()
             session["mode"] = mode
 
@@ -188,6 +219,7 @@ async def process_frame(websocket):
                 worked, rest = REP_TRANSITIONS[mode]
                 if prev_stage == worked and state.get("stage") == rest:
                     rep_completed = True
+                    session["reps"][mode] = session["reps"].get(mode, 0) + 1
 
             # Track plank hold time as a wall-clock delta since the last PLANK frame
             plank_hold_delta = 0.0
@@ -204,21 +236,40 @@ async def process_frame(websocket):
             # every frame after), keyed by session_id (not this connection) so it survives
             # a reconnect - only reset here happens on mode switch above.
             if fb in MISHAP_EXPLANATIONS:
+                metric_key, direction = fault_metric(mode, fb)
+                value = (state.get("metrics") or {}).get(metric_key) if metric_key else None
+                # 1-based rep the fault happened in (the rep currently in progress);
+                # None for hold exercises, which have no reps.
+                rep_index = None if mode in HOLD_MODES else session["reps"].get(mode, 0) + 1
+
                 if fb == session["fault_candidate"]:
                     session["fault_streak"] += 1
                 else:
+                    await _flush_fault(session)
+                    _reset_fault_tracking(session)
                     session["fault_candidate"] = fb
                     session["fault_streak"] = 1
+
+                session["fault_worst"] = _worse(session["fault_worst"], value, direction)
+                session["fault_dirty"] = session["fault_logged"]
+
+                # The same fault carrying on into the NEXT rep is a new affected
+                # rep - log it again so the report can say "reps 3, 4 and 5".
+                if session["fault_logged"] and rep_index != session["fault_rep"]:
+                    await _flush_fault(session)
                     session["fault_logged"] = False
+                    session["fault_worst"] = value
 
                 if session["fault_streak"] >= FAULT_MIN_STREAK and not session["fault_logged"]:
                     if session_id:
-                        await asyncio.to_thread(log_fault, session_id, mode, fb)
+                        session["fault_row"] = await asyncio.to_thread(
+                            log_fault, session_id, mode, fb, rep_index, session["fault_worst"])
                     session["fault_logged"] = True
+                    session["fault_rep"] = rep_index
+                    session["fault_dirty"] = False
             else:
-                session["fault_candidate"] = None
-                session["fault_streak"] = 0
-                session["fault_logged"] = False
+                await _flush_fault(session)
+                _reset_fault_tracking(session)
 
             voice_cue = session["coach"].observe(fb, clr, rep_completed, is_hold=mode in HOLD_MODES)
 
@@ -266,6 +317,11 @@ async def handle_http_request(connection, request):
             "exercises": EXERCISES,
             "repBasedModes": sorted(REP_TRANSITIONS.keys()),
         })
+
+    if path == "/form-guide":
+        # Correct-form guide for every plannable exercise (form_reference.py).
+        # Numeric checkpoints come from the engine's calibrated thresholds.
+        return _json_response(200, "OK", guide_payload())
 
     if path == "/reports":
         os.makedirs(REPORTS_DIR, exist_ok=True)
